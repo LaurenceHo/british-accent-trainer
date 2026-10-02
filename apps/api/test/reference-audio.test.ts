@@ -3,13 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import app from '../src/index';
 import { referenceAudioKey } from '../src/routes/reference-audio';
 import { escapeXml } from '../src/tts/azure';
+import { buildWav } from './build-wav';
 
 /**
  * Reference audio: synthesise once, cache in R2, invalidate when the sentence changes.
  * `fetch` is stubbed; R2 is the real Miniflare binding.
  */
 
-const FAKE_WAV = new Uint8Array([82, 73, 70, 70, 1, 2, 3, 4]).buffer;
+/** A genuine 16 kHz mono WAV: synthesis output is now validated before it is cached. */
+const FAKE_WAV = buildWav({ dataBytes: 3_200 });
 
 function stubTts(init: ResponseInit = { status: 200 }) {
   const spy = vi.fn(async (_input: unknown, _init?: unknown) =>
@@ -141,7 +143,7 @@ describe('escapeXml', () => {
     );
   });
 
-  it('escapes ampersands first so existing entities are not double-unescaped', () => {
+  it('treats existing entities as literal text', () => {
     expect(escapeXml('&lt;')).toBe('&amp;lt;');
   });
 });
@@ -172,5 +174,134 @@ describe('configuration', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get('X-Reference-Cache')).toBe('HIT');
+  });
+});
+
+describe('validating synthesis output before caching', () => {
+  // A 2xx says nothing about the body. Anything cached here is served for as long as the
+  // sentence stays the same, so bad output must never reach R2.
+  const cases: [string, () => Response][] = [
+    ['an empty 200', () => new Response(new ArrayBuffer(0), { status: 200 })],
+    [
+      'a JSON error delivered with status 200',
+      () =>
+        new Response('{"error":"quota"}', {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    ],
+    ['a header-only WAV with no samples', () => new Response(buildWav({ dataBytes: 0 }))],
+    ['audio at the wrong sample rate', () => new Response(buildWav({ sampleRate: 44_100 }))],
+  ];
+
+  for (const [name, respond] of cases) {
+    it(`refuses ${name}: 502, and nothing cached`, async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => respond()));
+
+      const res = await get('/api/drills/d1/reference-audio');
+
+      expect(res.status).toBe(502);
+      expect((await env.AUDIO.list({ prefix: 'reference/' })).objects).toHaveLength(0);
+    });
+  }
+
+  it('turns a transport failure into a 502, not a 500', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Network connection lost.');
+      }),
+    );
+
+    expect((await get('/api/drills/d1/reference-audio')).status).toBe(502);
+  });
+
+  it('turns a failure while reading the body into a 502, not a 500', async () => {
+    const broken = new ReadableStream({
+      pull(controller) {
+        controller.error(new Error('connection reset'));
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(broken, { status: 200 })));
+
+    expect((await get('/api/drills/d1/reference-audio')).status).toBe(502);
+  });
+});
+
+describe('the request sent to Azure', () => {
+  it('escapes drill text, routes the chosen voice, and targets the speech host', async () => {
+    // escapeXml is unit-tested separately; this proves it is actually applied on the way
+    // out. Deleting the call would otherwise leave every other test passing.
+    await seedDrill('d1', `Tom & "Jerry" <b> it's`);
+    const spy = stubTts();
+
+    await get('/api/drills/d1/reference-audio?voice=en-GB-RyanNeural');
+
+    const url = String(spy.mock.calls[0]?.[0]);
+    const body = String((spy.mock.calls[0]?.[1] as { body: string }).body);
+
+    expect(url).toBe('https://testregion.tts.speech.microsoft.com/cognitiveservices/v1');
+    expect(body).toContain("name='en-GB-RyanNeural'");
+    expect(body).toContain('Tom &amp; &quot;Jerry&quot; &lt;b&gt; it&apos;s');
+    expect(body).not.toContain('<b>');
+  });
+});
+
+describe('browser caching', () => {
+  it('sends a revalidating ETag rather than a fixed max-age', async () => {
+    // The URL is stable while the sentence can change; max-age would keep old wording.
+    stubTts();
+    const res = await get('/api/drills/d1/reference-audio');
+    await res.arrayBuffer();
+
+    expect(res.headers.get('Cache-Control')).toBe('no-cache');
+    expect(res.headers.get('ETag')).toMatch(/^".+"$/);
+  });
+
+  it('answers a matching If-None-Match with 304 and no body', async () => {
+    const spy = stubTts();
+    const first = await get('/api/drills/d1/reference-audio');
+    await first.arrayBuffer();
+
+    const res = await app.request(
+      '/api/drills/d1/reference-audio',
+      { headers: { 'If-None-Match': first.headers.get('ETag') ?? '' } },
+      env,
+    );
+
+    expect(res.status).toBe(304);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('changes the ETag when the sentence is edited, so the browser refetches', async () => {
+    stubTts();
+    const before = await get('/api/drills/d1/reference-audio');
+    await before.arrayBuffer();
+
+    await seedDrill('d1', 'Half past, after the dance');
+    const res = await app.request(
+      '/api/drills/d1/reference-audio',
+      { headers: { 'If-None-Match': before.headers.get('ETag') ?? '' } },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('ETag')).not.toBe(before.headers.get('ETag'));
+    await res.arrayBuffer();
+  });
+
+  it('still serves fresh audio when the cache write fails', async () => {
+    stubTts();
+    const failingBucket = {
+      get: async () => null,
+      put: async () => {
+        throw new Error('R2 unavailable');
+      },
+    } as unknown as R2Bucket;
+
+    const res = await app.request('/api/drills/d1/reference-audio', {}, { ...env, AUDIO: failingBucket });
+
+    expect(res.status).toBe(200);
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array(FAKE_WAV));
   });
 });

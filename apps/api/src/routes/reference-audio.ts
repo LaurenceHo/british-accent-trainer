@@ -34,13 +34,28 @@ export async function referenceAudioKey(
   return `reference/${voice}/${drillId}-${await shortHash(sentence)}.wav`;
 }
 
-function wavResponse(audio: ArrayBuffer | ReadableStream, cache: 'HIT' | 'MISS'): Response {
+/**
+ * The R2 key doubles as a strong validator: it changes exactly when the audio does.
+ *
+ * The URL stays the same when a drill's sentence is edited, so a plain `max-age` would
+ * have the browser — and later the PWA service worker — keep serving the old wording.
+ * `no-cache` with this ETag means every play revalidates, and an unchanged recording costs
+ * a 304 rather than a re-download.
+ */
+function etagFor(key: string): string {
+  return `"${key}"`;
+}
+
+function wavResponse(
+  audio: ArrayBuffer | ReadableStream,
+  key: string,
+  cache: 'HIT' | 'MISS',
+): Response {
   return new Response(audio, {
     headers: {
       'Content-Type': 'audio/wav',
-      // The URL does not change when the sentence does, so browsers revalidate rather than
-      // caching indefinitely. R2 is the durable cache; this just spares repeat fetches.
-      'Cache-Control': 'public, max-age=3600',
+      'Cache-Control': 'no-cache',
+      ETag: etagFor(key),
       'X-Reference-Cache': cache,
     },
   });
@@ -60,8 +75,13 @@ referenceAudio.get('/:id/reference-audio', async (c) => {
 
   const key = await referenceAudioKey(drill.id, drill.sentence, voice);
 
+  // Answered before touching R2: the key already says whether the client's copy is current.
+  if (c.req.header('If-None-Match') === etagFor(key)) {
+    return new Response(null, { status: 304, headers: { ETag: etagFor(key) } });
+  }
+
   const cached = await c.env.AUDIO.get(key);
-  if (cached) return wavResponse(cached.body, 'HIT');
+  if (cached) return wavResponse(cached.body, key, 'HIT');
 
   // Checked only on a cache miss: already-synthesised audio stays servable even if the
   // credentials are later removed.
@@ -76,13 +96,21 @@ referenceAudio.get('/:id/reference-audio', async (c) => {
     audio = await synthesiseSpeech(config, drill.sentence, voice);
   } catch (error) {
     if (error instanceof SpeechSynthesisError) {
+      // The message holds only the upstream status, never the body or the key.
+      console.error(`reference audio failed for drill ${drill.id} (${voice}):`, error.message, error.cause);
       return c.json({ error: 'Reference audio is temporarily unavailable' }, 502);
     }
     throw error;
   }
 
-  await c.env.AUDIO.put(key, audio, { httpMetadata: { contentType: 'audio/wav' } });
-  return wavResponse(audio, 'MISS');
+  // A failed cache write should not cost the user the audio already in hand. The next
+  // request simply synthesises again.
+  try {
+    await c.env.AUDIO.put(key, audio, { httpMetadata: { contentType: 'audio/wav' } });
+  } catch (error) {
+    console.error(`reference audio for drill ${drill.id} not cached`, error);
+  }
+  return wavResponse(audio, key, 'MISS');
 });
 
 export default referenceAudio;

@@ -1,3 +1,4 @@
+import { assertScorableWav, InvalidAudioError } from '../audio/wav';
 import { isValidRegion, type AzureConfig } from '../azure-config';
 
 /**
@@ -98,5 +99,26 @@ export async function synthesiseSpeech(
     throw new SpeechSynthesisError(`Azure text-to-speech failed: ${response.status}`);
   }
 
-  return response.arrayBuffer();
+  let audio: ArrayBuffer;
+  try {
+    audio = await response.arrayBuffer();
+  } catch (cause) {
+    // A connection reset or the timeout firing mid-body lands here, not in the fetch catch.
+    throw new SpeechSynthesisError('Azure text-to-speech response was interrupted', { cause });
+  }
+
+  // A 2xx says nothing about the body. An empty response, or a JSON error delivered with
+  // status 200, would otherwise be cached under a key that never changes and served as
+  // audio indefinitely. The reference must be the same 16 kHz mono PCM as a recording, so
+  // the check that guards uploads guards the cache too.
+  try {
+    assertScorableWav(audio);
+  } catch (cause) {
+    if (cause instanceof InvalidAudioError) {
+      throw new SpeechSynthesisError(`Azure returned unusable audio: ${cause.message}`, { cause });
+    }
+    throw cause;
+  }
+
+  return audio;
 }
