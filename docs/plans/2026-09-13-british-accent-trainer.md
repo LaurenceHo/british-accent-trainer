@@ -18,9 +18,22 @@
 > `ScoringProvider` interface was introduced. What changed is **Task 8's scope**: the
 > feedback UI cannot be driven by an `en-GB` score.
 >
-> One partial rescue is under evaluation: per-feature detection via an inverted `en-US`
-> assessment (Rung 5 in the spec). Validated for *car*, failed for *water*, synthetic audio
-> only. Full evidence: `spike/FINDINGS.md`.
+> **Final verdict, 2026-09-20.** The `en-US` inversion detector (Rung 5) was explored and
+> **rejected**. Only 3 of 19 probed contexts detect, and rhoticity detection disappears in
+> connected speech — the form every drill takes. The cause is structural: Azure's American
+> phone inventory has no `ɒ`, no `əʊ`, and no `ɑː` distinct from `ɑ`, so RP and American
+> renditions collapse onto the same symbol before anything reaches us.
+>
+> **The product is now a shadowing trainer**: native reference audio, the user's recording,
+> and A/B comparison between them — none of which needs an accent-scoring API. Azure
+> contributes the reference voice and a clarity score, honestly labelled.
+>
+> **Two resequencing consequences:**
+> - **Task 10 (audio storage + replay) is promoted from Phase 3 to core** — A/B comparison
+>   is the primary learning mechanism, not a retention feature.
+> - **Task 8 becomes comparison UI, not scoring UI.**
+>
+> Full evidence: `spike/FINDINGS.md`.
 
 ## Strategy
 
@@ -65,10 +78,12 @@ Task 0  Repo, scaffold, test harness, Azure key
                                                     │
                         ┌───────────────────────────┼───────────────┐
                         ▼                           ▼               ▼
-                 Task 7  Reference TTS      Task 10  Audio     Task 11  Progress
-                        │                         replay            trends
-                        ▼                                              │
-                 Task 8  Feedback UI ◄── scope set by Task 1           │
+                 Task 7  Reference TTS      Task 10  Attempt   Task 11  Progress
+                    (the model to             audio in R2         trends
+                     shadow) │                       │               │
+                        ▼                            ▼               │
+                 Task 8  COMPARISON UI ◄── needs BOTH ──┘            │
+                    reference vs attempt, synced playback            │
                         │                                              │
                         └──────────────┬───────────────────────────────┘
                                        ▼
@@ -98,17 +113,17 @@ Task 8. Do not begin Phase 1 until resolved with a human.
 
 **Checkpoint: End-to-End Flow** — the loop works in a browser.
 
-### Phase 2: Meaningful Feedback
+### Phase 2: Shadowing and Comparison
 
 - [ ] Task 7: Reference `en-GB` TTS with R2 caching
-- [ ] Task 8: Detailed pronunciation feedback UI (per surviving rung)
+- [ ] Task 8: **Comparison UI** — reference vs attempt waveforms, synchronised playback
 - [ ] Task 9: Local British IPA lexicon
+- [ ] Task 10: Attempt audio storage and replay **(core — A/B comparison depends on it)**
 
-**Checkpoint: Feedback Quality** — feedback is honest about what the engine measured.
+**Checkpoint: Shadowing works** — the user can hear the reference, record, and compare the two. Feedback is honest about measuring clarity, not accent.
 
 ### Phase 3: Progress and Polish
 
-- [ ] Task 10: Attempt audio storage and replay
 - [ ] Task 11: Progress history and trends
 - [ ] Task 12: PWA, accessibility, and cross-browser hardening
 
@@ -142,15 +157,20 @@ Mostly sequential, but once the Engine Decision Gate clears:
   no files and can run concurrently.
 - **Tasks 10 and 11 are independent** of each other, both depending only on Task 5.
 - **Task 4 must wait for Task 1** — it needs the real response shape and the captured fixture.
-- **Task 8 must wait for Task 1's *verdict*** on scope, not merely its completion.
+- **Task 8 depends on Task 10** — comparison UI needs stored audio to compare.
 
 ---
 
 ## Scope Note
 
-Phases 0–2 constitute a genuinely useful MVP: pick a drill, hear the reference, record,
-get scored, see where it went wrong. Phase 3 is the retention layer — replay, trends, and
-installability.
+Phases 0–2 constitute a genuinely useful MVP: pick a drill, hear a native RP model, record
+yourself, and **play the two back against each other**. That is the whole shadowing loop,
+and it is the product. Phase 3 adds trends and installability.
 
-If the project needs trimming, **cut from Phase 3, not from Phase 0**. The spike is the
-cheapest task here and the only one that cannot be skipped.
+If the project needs trimming, **cut from Phase 3, not from Phase 2**. Task 10 in
+particular is no longer optional — without stored attempt audio there is nothing to compare
+the reference against, and the app degrades to a clarity scorer that cannot hear accent.
+
+The spike was the cheapest task here and the one that could not be skipped: it cost two
+days and prevented building an entire feedback UI on a signal that does not measure the
+target accent.

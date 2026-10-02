@@ -13,14 +13,23 @@ A Progressive Web App for practising **Received Pronunciation (RP)**, installabl
 desktop and mobile. It is built as a single-user tool: there are no accounts, and all
 practice data stays with whoever runs the instance.
 
-**The loop:** the app shows a target sentence, the user hears a native `en-GB` reference,
-records themselves reading it, and receives a pronunciation score. Scores accumulate so
-the user can see whether specific RP features are improving over time.
+**The loop — shadowing:** the app shows a target sentence, plays a native `en-GB` reference,
+and records the user reading it. The user then **plays the two back against each other** and
+hears the difference themselves. Attempts are kept so progress is audible over weeks.
 
-**Why it is not just a speech-to-text app:** general ASR is engineered to *forgive* accent
-and transcribe intent. This app needs the opposite — scoring that is *unforgiving* about
-the gap between what was said and RP. That requires phoneme-level assessment against an
-`en-GB` reference, not transcription.
+**Why shadowing rather than scoring.** The original design assumed an API could grade *how
+British* a recording sounds. It cannot — measured, not assumed (`spike/FINDINGS.md`). Azure
+`en-GB` scores British and American readings identically, and the `en-US` phone inventory
+has no symbols for the RP vowels, so the contrast is destroyed before any result reaches
+us. This is structural and applies to any feature we might try.
+
+So the app does what accent coaching actually does: supply a good model, capture the
+attempt, and make comparison easy and repeatable. The learner's ear does the judging —
+which is the skill being trained in any case.
+
+**What the scoring API is still good for:** a native reference voice (`en-GB` TTS), a
+*clarity* measure that flags an unclear or misread word, and timings to locate it in the
+sentence. Never an accent judgement.
 
 **Non-goals:** multi-user accounts, teacher/classroom features, languages other than
 British English, and live conversational feedback.
@@ -116,7 +125,23 @@ rung survives** — this is a deliberate scope decision, not a hedge.
 **The blocker is not feedback granularity — the underlying scores do not measure the target
 accent.** Rungs 3 and 4 are presentation choices over a signal that is blind to RP.
 
-### Rung 5 — per-feature detection (new, partially validated)
+### Rung 5 — per-feature detection — ❌ REJECTED 2026-09-20
+
+> **Superseded.** The section below records the approach and why it was explored. It is
+> **not viable on Azure** and must not be built. Probing 19 contexts found only *car*,
+> *nurse* and *bath* detectable, all in isolation; rhoticity detection vanishes in
+> connected speech, which is the form every drill takes.
+>
+> **Root cause is structural:** `NBestPhonemes` can only report phones in Azure's American
+> inventory (`æ ɑ ɔ ɛ ə ɝ ɑɹ oʊ`). There is no `ɒ`, no `əʊ`, no `ɑː` distinct from `ɑ`. RP
+> vowels lacking an American counterpart collapse onto the nearest one before we see them,
+> so RP and American renditions are identical *by construction*. BATH is the single
+> exception, because its RP vowel maps to `ɑ` while American uses `æ` — two symbols that
+> both exist. No further probing will change this.
+>
+> Evidence: `spike/FINDINGS.md` UPDATE 3, `spike/results/features.json`.
+
+#### Original rationale (retained for context)
 
 Not in the original ladder. Instead of scoring *how British* an utterance is, **detect
 specific features individually** and report each as a categorical result.
@@ -131,11 +156,39 @@ correctly dropped the r. See `apps/api/src/spike/rhotic-detector.ts`.
 | *car*, rhotic | `ɑɹ` | `ɑɹ` | r produced ✅ |
 | *water*, non-rhotic | `ɚ` | `ɚ` | **false negative** ❌ |
 
-**Status: promising, unproven.** Works on wide contrasts, fails on narrow ones, and is so
-far only tested on synthetic audio. A detector that says *"you pronounced the r in car — RP
-drops it"* teaches more than *"your pronunciation scored 64"*, so this is the most
-promising direction — but only features that demonstrably discriminate may ship, and a
-non-detection must be reported as **unknown**, never as a negative result.
+**Final status: rejected.** 3 detectable contexts out of 19, none surviving connected
+speech except *bath*. See the note above for the root cause.
+
+---
+
+## The design that replaces it — a shadowing trainer
+
+Accent training is fundamentally a **shadowing loop**: hear a model, imitate it, compare
+your attempt against the model, repeat. The comparison is made by the learner's ear. A
+coach accelerates it; no coach makes it automatic.
+
+Every part of that loop is available **without any accent-scoring API**:
+
+| Need | Source | Risk |
+| --- | --- | --- |
+| Native RP model to imitate | Azure `en-GB` neural TTS | None — this works well |
+| The learner's own recording | Browser capture → 16 kHz mono WAV | None |
+| **A/B playback and waveform comparison** | Signal processing on two WAV files we own | None — no vendor involved |
+| Knowing what to listen for | Drills that concentrate one feature, plus a coaching note | None |
+| Progress over weeks | Stored attempts, replayable | None |
+
+Azure's `en-GB` score rides along as a **secondary, honestly-labelled** signal: it measures
+intelligibility ("this word was unclear"), never accent.
+
+**Consequences for the plan:**
+
+- **Task 10 (audio storage and replay) is promoted from Phase 3 to core.** A/B comparison
+  against the reference is the primary learning mechanism, not a retention feature.
+- **Task 8 becomes comparison UI, not scoring UI** — waveforms side by side, synchronised
+  playback, the target IPA and coaching note, and the clarity score clearly captioned as
+  clarity rather than accent.
+- Nothing in Tasks 2–7 or 9–12 changes. They were vendor-agnostic by design, which is what
+  makes this recoverable.
 
 ---
 
@@ -313,8 +366,8 @@ The standing bar every task clears, on top of its own acceptance criteria:
 **Never:**
 - Commit the Azure key, or any secret — it belongs in `.dev.vars` (gitignored) and Worker secrets
 - **Score** the user against `en-US` — that grades them for sounding American and inverts
-  the entire purpose of the app. *(Permitted exception: using `en-US` as a feature detector
-  with an inverted verdict, where no American score reaches the user. See Rung 5.)*
+  the entire purpose of the app. *(The `en-US` inversion detector was explored and
+  rejected — see Rung 5. Do not revive it.)*
 - Present an `en-GB` score as a measure of RP-ness — measured, it is not one
 - Use CMUdict as the primary lexicon — it is American and rhotic, encoding the very
   pronunciations this app trains against
@@ -333,15 +386,16 @@ Gate and is therefore not promised at project level.
 
 - [ ] The user can open the app on an Android phone and desktop browser, installed as a PWA
 - [ ] The user can select a drill and hear a native `en-GB` reference pronunciation
-- [ ] The user can record themselves and receive an `en-GB` pronunciation score within a
-      few seconds
+- [ ] The user can record themselves and get a **clarity** score within a few seconds,
+      labelled so it cannot be mistaken for an accent judgement
 - [ ] The recording is transmitted as valid 16 kHz / 16-bit / mono WAV, verified by
       byte-level assertion
 - [ ] Each attempt is persisted and visible in history
 - [ ] Score trends are viewable **per RP feature** (non-rhotic /r/, TRAP–BATH, LOT vowel) —
       not as a single meaningless global average
-- [ ] Feedback localises *where* pronunciation went wrong within the sentence, at the
-      richest rung the engine supports
+- [ ] The user can play their attempt back against the reference for comparison
+- [ ] Feedback shows *where* in the sentence clarity dropped, captioned as clarity and
+      never as an accent judgement
 - [ ] Works in Chrome, Firefox, and Safari, including microphone capture
 - [ ] No secrets in the repository; full suite and build clean
 

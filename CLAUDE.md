@@ -4,9 +4,16 @@ Guidance for Claude Code when working in this repository.
 
 ## Project
 
-A Progressive Web App for practising Received Pronunciation (RP). A user reads a target
-sentence, records their voice, and receives phoneme-level pronunciation scoring against an
-`en-GB` reference, with progress tracked per RP feature over time.
+A Progressive Web App for practising Received Pronunciation (RP), built as a **shadowing
+trainer**: the user hears a native `en-GB` model, records themselves reading the same
+sentence, and plays the two back against each other. Attempts are kept so progress is
+audible over time.
+
+**It does not grade accent, and must never claim to.** That was the original design and it
+was disproven — see "Critical domain constraint" below and `spike/FINDINGS.md`. No
+available API can tell RP from General American, so the learner's ear does the judging and
+the app's job is to make comparison fast and repeatable. The `en-GB` score is retained only
+as a *clarity* signal, always captioned as such.
 
 TypeScript throughout: a Hono REST API on Cloudflare Workers, a React + Vite PWA frontend.
 
@@ -70,18 +77,31 @@ UI.** It measures general intelligibility, which is a different question.
 follow the American inventory, so the arrays do not correspond. Use time alignment
 (`Offset`/`Duration`) or word-level scores instead.
 
-**3. The `en-US` rule, precisely.** Never **score** the user against `en-US` — that grades
-them for sounding American and inverts the app's purpose.
+**3. Automated RP feature detection is NOT viable on Azure. Do not attempt it.**
 
-> **Permitted exception:** using `en-US` as a **feature detector** with an inverted
-> verdict. At `en-US` the API returns phoneme names and `NBestPhonemes` (the phones it
-> actually heard). For *car* it expects `ɑɹ`; a correct RP speaker is reported as producing
-> bare `ɑ` — so **hearing the non-rhotic variant means the user got RP right.** See
-> `src/spike/rhotic-detector.ts`. No American score is ever shown to the user.
->
-> Known limit: this works on wide contrasts (`ɑ` vs `ɑɹ` in *car*) and fails on narrow ones
-> (`ə` vs `ɚ` in *water*, where both are heard as `ɚ`). Treat a non-detection as
-> **unknown**, never as "rhotic".
+The `en-US` inversion trick was explored thoroughly and rejected. `en-US` does return
+phoneme names and `NBestPhonemes`, and *car*, *nurse* and *bath* do detect in isolation —
+but only 3 contexts out of 19 probed, and rhoticity detection **disappears entirely in
+connected speech**, which is the form every drill takes.
+
+**Root cause, and it is structural:** `NBestPhonemes` can only report phones that exist in
+Azure's **American** inventory — `æ ɑ ɔ ɛ ə ɝ ɑɹ oʊ`. There is no `ɒ`, no `əʊ`, and no `ɑː`
+distinct from `ɑ`. RP vowels without an American counterpart are mapped to the nearest one,
+destroying the contrast before it reaches us:
+
+| RP vowel | Maps to | Same as American? |
+| --- | --- | --- |
+| /ɑː/ *bath* | `ɑ` | No — American uses `æ`, so this one detects |
+| /ɒ/ *got* | `ɑ` | Yes — contrast lost |
+| /əʊ/ *go* | `oʊ` | Yes — contrast lost |
+
+No further probing will change this. Full evidence in `spike/FINDINGS.md`.
+
+**Never score the user against `en-US`** either — that grades them for sounding American.
+
+`src/spike/rhotic-detector.ts` keeps a confirm-only safety rule (report a dropped r, never
+report a produced one, since that verdict carries 55% precision). It is retained as a
+reference implementation, **not as a shipping feature**.
 
 **4. Other standing rules:**
 
