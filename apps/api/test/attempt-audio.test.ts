@@ -40,7 +40,10 @@ beforeEach(async () => {
   await Promise.all((await storedAudioKeys()).map((key) => env.AUDIO.delete(key)));
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe('storing attempt audio', () => {
   it('stores the recording and records its key on the attempt', async () => {
@@ -51,26 +54,30 @@ describe('storing attempt audio', () => {
   });
 
   it('stores nothing when scoring fails', async () => {
-    // A rejected recording should not occupy storage.
+    // A rejected recording should not occupy storage. The status is asserted so the test
+    // cannot pass because the request failed earlier for some unrelated reason.
     stubAzure({ RecognitionStatus: 'NoMatch' });
 
-    await submit(buildWav());
+    const res = await submit(buildWav());
 
+    expect(res.status).toBe(400);
     expect(await storedAudioKeys()).toHaveLength(0);
   });
 
   it('stores nothing for invalid audio', async () => {
     stubAzure(fixture);
 
-    await submit(new ArrayBuffer(100));
+    const res = await submit(new ArrayBuffer(100));
 
+    expect(res.status).toBe(400);
     expect(await storedAudioKeys()).toHaveLength(0);
   });
 
-  it('still saves the attempt when the audio write fails', async () => {
+  it('still saves the attempt when the audio write fails, and says so', async () => {
     // The score has already been paid for; losing it to a storage hiccup would be worse
     // than losing replay for one attempt.
     stubAzure(fixture);
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const failingBucket = {
       put: async () => {
         throw new Error('R2 unavailable');
@@ -78,9 +85,16 @@ describe('storing attempt audio', () => {
     } as unknown as R2Bucket;
 
     const res = await submit(buildWav(), { ...env, AUDIO: failingBucket });
-    const { attempt } = (await res.json()) as { attempt: Attempt };
+    const { attempt, audioStored } = (await res.json()) as {
+      attempt: Attempt;
+      audioStored: boolean;
+    };
 
     expect(res.status).toBe(201);
+    expect(audioStored, 'the client must be able to warn that replay is unavailable').toBe(
+      false,
+    );
+    expect(logged.mock.calls.flat().join(' ')).toContain(attempt.id);
     expect(attempt.audioKey).toBeNull();
     const row = await env.DB.prepare('SELECT audio_key FROM attempts WHERE id = ?')
       .bind(attempt.id)
@@ -132,5 +146,48 @@ describe('GET /api/attempts/:id/audio', () => {
     await env.AUDIO.delete(attempt.audioKey ?? '');
 
     expect((await getAudio(attempt.id)).status).toBe(404);
+  });
+});
+
+describe('failure modes that must not pass silently', () => {
+  it('returns 503 for a missing AUDIO binding, before spending a scoring call', async () => {
+    // A missing binding is a deploy error. Swallowed like a transient R2 failure, every
+    // submission would return 201 with replay silently dead.
+    const spy = stubAzure(fixture);
+
+    const res = await submit(buildWav(), { ...env, AUDIO: undefined as unknown as R2Bucket });
+
+    expect(res.status).toBe(503);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('removes the stored audio when the attempt row cannot be saved', async () => {
+    // Without a row the audio has no handle: unreachable through the API, and invisible to
+    // any future "delete my recordings" feature.
+    stubAzure(fixture);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const db = new Proxy(env.DB, {
+      get(target, prop, receiver) {
+        if (prop !== 'prepare') return Reflect.get(target, prop, receiver);
+        return (sql: string) => {
+          if (sql.includes('INSERT INTO attempts')) throw new Error('D1 unavailable');
+          return target.prepare(sql);
+        };
+      },
+    });
+
+    const res = await submit(buildWav(), { ...env, DB: db });
+
+    expect(res.status).toBe(500);
+    expect(await storedAudioKeys(), 'audio with no row must not be left behind').toHaveLength(0);
+  });
+
+  it('serves audio with nosniff, since only the header was validated', async () => {
+    const attempt = await submitScored();
+
+    const res = await getAudio(attempt.id);
+    await res.arrayBuffer();
+
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
 });
