@@ -3,21 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import app from '../src/index';
 import { RP_FEATURES } from '../src/domain';
 import type { ProgressResponse } from '../src/routes/progress';
+import { seedDrill } from './route-helpers';
 
 /**
  * Progress per RP feature: practice volume and clarity over time, never accent.
  * Rows are inserted directly so timestamps — and therefore day boundaries — are exact.
  */
-
-async function seedDrill(id: string, feature: string) {
-  await env.DB.prepare(
-    `INSERT OR REPLACE INTO drills
-     (id, sentence, target_ipa, feature, difficulty, coaching_note, has_r_context, sort_order)
-     VALUES (?, 'sentence', 'x', ?, 4, 'note', 0, 1)`,
-  )
-    .bind(id, feature)
-    .run();
-}
 
 let counter = 0;
 async function attempt(drillId: string, createdAt: string, accuracy: number | null = 80) {
@@ -47,9 +38,9 @@ beforeEach(async () => {
 
   await env.DB.prepare('DELETE FROM attempts').run();
   await env.DB.prepare('DELETE FROM drills').run();
-  await seedDrill('bath-1', 'BATH');
-  await seedDrill('bath-2', 'BATH');
-  await seedDrill('lot-1', 'LOT');
+  await seedDrill('bath-1', 'sentence', 'BATH');
+  await seedDrill('bath-2', 'sentence', 'BATH');
+  await seedDrill('lot-1', 'sentence', 'LOT');
 });
 
 afterEach(() => vi.useRealTimers());

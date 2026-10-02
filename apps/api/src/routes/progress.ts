@@ -41,6 +41,7 @@ export interface FeatureProgress {
   readonly days: readonly DailyProgress[];
 }
 
+/** Body of `GET /api/progress`. */
 export interface ProgressResponse {
   /** Always `clarity`: the averages measure intelligibility, never accent. */
   readonly measures: 'clarity';
@@ -101,7 +102,7 @@ progress.get('/', async (c) => {
   }
 
   const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
-  const shift = `${tzOffset >= 0 ? '+' : ''}${tzOffset} minutes`;
+  const shift = `${tzOffset} minutes`;
 
   // `shift` is built from a validated integer, but it is still bound, never interpolated.
   const { results } = await c.env.DB.prepare(
