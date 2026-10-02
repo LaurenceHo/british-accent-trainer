@@ -64,7 +64,7 @@ touching scoring.
 `Offset`/`Duration`, but the `Phoneme` name is `""`. Syllable groups, prosody, and
 `NBestPhonemes` are `en-US`-only. Worse, the scores do not track the target accent:
 
-- Real recordings of *car* scored **64 non-rhotic vs 65 rhotic**; *water* **65 vs 67**.
+- In natural speech, *car* scored **64 non-rhotic vs 65 rhotic**; *water* **65 vs 67**.
   A deliberately rolled American r is indistinguishable from no r at all.
 - In connected speech, British and American readings score **identically on every
   phoneme** — `glass` (/ɡlɑːs/ vs /ɡlæs/) scores 100 both ways.
@@ -198,6 +198,19 @@ the multi-service AI bundle — F0 free tier, and a narrower credential scope.
 **Commits:** never add AI attribution of any kind — no `Co-Authored-By` trailer, no
 "generated with" line, no tool name in the message. Commit messages describe the change
 only. This repository is intended to be public.
+
+**`master` keeps a linear history — no merge commits.** The repo is configured with
+`merge.ff = only` and `pull.rebase = true`, so a merge that would create a merge commit
+fails rather than silently branching the graph. To land a feature branch:
+
+```bash
+git checkout feat/x && git rebase master   # replay onto the tip
+git checkout master && git merge feat/x    # fast-forwards; --ff-only is the default here
+git branch -d feat/x
+```
+
+Never use `--no-ff`. If `git merge` refuses with "not possible to fast-forward", rebase the
+branch first — do not reach for `--no-ff` to force it through.
 
 **Ask before:** swapping the scoring vendor, adding a dependency, or changing the D1 schema
 once it holds data.

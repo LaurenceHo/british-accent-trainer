@@ -106,6 +106,30 @@ A plain `fetch()` POST with a WAV body — fully supported on Workers.
 
 ---
 
+## Drill Difficulty
+
+Drills progress the way elocution practice does — isolate the sound, contrast it against
+its neighbour, then build up to flowing speech.
+
+| Level | Form | Example |
+| --- | --- | --- |
+| 1 | Single word | *bath* |
+| 2 | Minimal pair | *bath, bat* |
+| 3 | Short phrase | *a glass of water* |
+| 4 | Full sentence | *Ask the class about the bath* |
+| 5 | Connected speech | *Ask for a glass of water after the dance class* |
+
+Difficulty also tracks **how much the app can honestly say**. An isolated word gives the
+engine the most acoustic evidence per sound; connected speech gives it the least — which is
+exactly why the detector that worked on isolated *car* failed on *car* inside a sentence.
+So the lower levels are both the gentler place to start and the levels where any feedback
+is most trustworthy. Difficulty aligns with honesty, not just with effort.
+
+From level 3 upward each item deliberately loads its target feature several times, so one
+recording yields multiple attempts at the same contrast.
+
+---
+
 ## Feedback Ladder
 
 What the app promises the user, in descending order of richness. Because engine fitness is

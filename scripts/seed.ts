@@ -18,12 +18,13 @@ function sql(value: string): string {
 const statements = DRILLS.map(
   (d) =>
     `INSERT OR REPLACE INTO drills ` +
-    `(id, sentence, target_ipa, feature, coaching_note, has_r_context, sort_order) VALUES (` +
+    `(id, sentence, target_ipa, feature, difficulty, coaching_note, has_r_context, sort_order) VALUES (` +
     [
       sql(d.id),
       sql(d.sentence),
       sql(d.targetIpa),
       sql(d.feature),
+      d.difficulty,
       sql(d.coachingNote),
       d.hasRContext ? 1 : 0,
       d.sortOrder,

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { Drill, RpFeature } from '../domain';
+import { toDifficulty, type Drill, type RpFeature } from '../domain';
 import type { Env } from '../types';
 
 /** Row shape as stored in D1. Column names are snake_case; the API returns camelCase. */
@@ -10,6 +10,7 @@ interface DrillRow {
   readonly feature: string;
   readonly coaching_note: string;
   readonly has_r_context: number;
+  readonly difficulty: number;
   readonly sort_order: number;
 }
 
@@ -20,6 +21,7 @@ function toDrill(row: DrillRow): Drill {
     sentence: row.sentence,
     targetIpa: row.target_ipa,
     feature: row.feature as RpFeature,
+    difficulty: toDifficulty(row.difficulty),
     coachingNote: row.coaching_note,
     hasRContext: row.has_r_context === 1,
     sortOrder: row.sort_order,
@@ -27,7 +29,7 @@ function toDrill(row: DrillRow): Drill {
 }
 
 const SELECT_COLUMNS =
-  'id, sentence, target_ipa, feature, coaching_note, has_r_context, sort_order';
+  'id, sentence, target_ipa, feature, difficulty, coaching_note, has_r_context, sort_order';
 
 /**
  * Looks up a single drill.
@@ -46,17 +48,42 @@ export async function findDrill(db: D1Database, id: string): Promise<Drill | nul
 
 const drills = new Hono<{ Bindings: Env }>();
 
-/** Lists all drills in presentation order, optionally filtered by RP feature. */
+/**
+ * Lists drills, easiest first.
+ *
+ * Ordering by difficulty then `sort_order` means the natural progression — isolate the
+ * sound, contrast it, build up to flowing speech — is the default presentation.
+ *
+ * Optional filters: `?feature=BATH`, `?difficulty=1`, or both.
+ */
 drills.get('/', async (c) => {
   const feature = c.req.query('feature');
+  const difficultyParam = c.req.query('difficulty');
 
-  const query = feature
-    ? c.env.DB.prepare(
-        `SELECT ${SELECT_COLUMNS} FROM drills WHERE feature = ? ORDER BY sort_order`,
-      ).bind(feature)
-    : c.env.DB.prepare(`SELECT ${SELECT_COLUMNS} FROM drills ORDER BY sort_order`);
+  const conditions: string[] = [];
+  const bindings: (string | number)[] = [];
 
-  const { results } = await query.all<DrillRow>();
+  if (feature) {
+    conditions.push('feature = ?');
+    bindings.push(feature);
+  }
+
+  if (difficultyParam !== undefined) {
+    const difficulty = Number(difficultyParam);
+    if (!Number.isInteger(difficulty) || difficulty < 1 || difficulty > 5) {
+      return c.json({ error: 'difficulty must be an integer from 1 to 5' }, 400);
+    }
+    conditions.push('difficulty = ?');
+    bindings.push(difficulty);
+  }
+
+  const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+  const sql = `SELECT ${SELECT_COLUMNS} FROM drills${where} ORDER BY difficulty, sort_order`;
+
+  const { results } = await c.env.DB.prepare(sql)
+    .bind(...bindings)
+    .all<DrillRow>();
+
   return c.json({ drills: results.map(toDrill) });
 });
 

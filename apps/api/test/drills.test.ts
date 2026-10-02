@@ -10,6 +10,7 @@ async function insertDrill(overrides: Partial<Drill> = {}): Promise<Drill> {
     sentence: 'The car park is over there',
     targetIpa: 'ðə ˈkɑː pɑːk ɪz ˈəʊvə ðeə',
     feature: 'NON_RHOTIC_R',
+    difficulty: 4,
     coachingNote: 'No r sounds at all.',
     hasRContext: true,
     sortOrder: 1,
@@ -18,14 +19,15 @@ async function insertDrill(overrides: Partial<Drill> = {}): Promise<Drill> {
 
   await env.DB.prepare(
     `INSERT OR REPLACE INTO drills
-     (id, sentence, target_ipa, feature, coaching_note, has_r_context, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+     (id, sentence, target_ipa, feature, difficulty, coaching_note, has_r_context, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       drill.id,
       drill.sentence,
       drill.targetIpa,
       drill.feature,
+      drill.difficulty,
       drill.coachingNote,
       drill.hasRContext ? 1 : 0,
       drill.sortOrder,
@@ -108,5 +110,53 @@ describe('GET /api/drills/:id', () => {
     const res = await app.request('/api/drills/nope', {}, env);
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: 'drill not found' });
+  });
+});
+
+describe('difficulty', () => {
+  beforeEach(async () => {
+    await env.DB.prepare('DELETE FROM drills').run();
+  });
+
+  it('orders easiest first regardless of sort_order', async () => {
+    await insertDrill({ id: 'sentence', difficulty: 4, sortOrder: 1 });
+    await insertDrill({ id: 'word', difficulty: 1, sortOrder: 999 });
+    await insertDrill({ id: 'phrase', difficulty: 3, sortOrder: 500 });
+
+    const res = await app.request('/api/drills', {}, env);
+    const body = (await res.json()) as { drills: Drill[] };
+
+    expect(body.drills.map((d) => d.id)).toEqual(['word', 'phrase', 'sentence']);
+  });
+
+  it('filters by difficulty', async () => {
+    await insertDrill({ id: 'w', difficulty: 1 });
+    await insertDrill({ id: 's', difficulty: 4 });
+
+    const res = await app.request('/api/drills?difficulty=1', {}, env);
+    const body = (await res.json()) as { drills: Drill[] };
+
+    expect(body.drills).toHaveLength(1);
+    expect(body.drills[0]?.id).toBe('w');
+  });
+
+  it('combines difficulty and feature filters', async () => {
+    await insertDrill({ id: 'bath-word', difficulty: 1, feature: 'BATH' });
+    await insertDrill({ id: 'bath-sentence', difficulty: 4, feature: 'BATH' });
+    await insertDrill({ id: 'lot-word', difficulty: 1, feature: 'LOT' });
+
+    const res = await app.request('/api/drills?difficulty=1&feature=BATH', {}, env);
+    const body = (await res.json()) as { drills: Drill[] };
+
+    expect(body.drills.map((d) => d.id)).toEqual(['bath-word']);
+  });
+
+  it('rejects an out-of-range difficulty rather than silently returning everything', async () => {
+    await insertDrill({ id: 'any' });
+
+    for (const bad of ['0', '6', 'abc', '2.5']) {
+      const res = await app.request(`/api/drills?difficulty=${bad}`, {}, env);
+      expect(res.status, `difficulty=${bad}`).toBe(400);
+    }
   });
 });

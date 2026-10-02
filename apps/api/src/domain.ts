@@ -38,13 +38,52 @@ export const RP_FEATURE_LABELS: Record<RpFeature, string> = {
   YOD: 'Retained yod',
 };
 
-/** One practice item: a sentence to read, and the RP feature it trains. */
+/**
+ * Difficulty, mirroring how elocution practice actually progresses: isolate the sound,
+ * contrast it against its neighbour, then build up to flowing speech.
+ *
+ * Also tracks how much the app can honestly say. Isolated words give the engine the most
+ * acoustic evidence per sound; in connected speech it has the least. So the lower levels
+ * are both easier to practise *and* the ones where any feedback is most trustworthy.
+ */
+export const DIFFICULTY = {
+  /** A single word — "bath". */
+  WORD: 1,
+  /** The contrast against its twin — "bath, bat". */
+  MINIMAL_PAIR: 2,
+  /** A short phrase — "a glass of water". */
+  PHRASE: 3,
+  /** A full sentence — "Ask the class about the bath". */
+  SENTENCE: 4,
+  /** Longer, with linking and reduction across clauses. */
+  CONNECTED: 5,
+} as const;
+
+export type Difficulty = (typeof DIFFICULTY)[keyof typeof DIFFICULTY];
+
+/** Human-readable labels for display. */
+export const DIFFICULTY_LABELS: Record<Difficulty, string> = {
+  1: 'Single word',
+  2: 'Minimal pair',
+  3: 'Short phrase',
+  4: 'Full sentence',
+  5: 'Connected speech',
+};
+
+/** Narrows an arbitrary number to a {@link Difficulty}, falling back to SENTENCE. */
+export function toDifficulty(value: number): Difficulty {
+  return value >= 1 && value <= 5 ? (value as Difficulty) : DIFFICULTY.SENTENCE;
+}
+
+/** One practice item: the text to read, and the RP feature it trains. */
 export interface Drill {
   readonly id: string;
+  /** The text the user reads aloud. A word, a pair, a phrase, or a sentence. */
   readonly sentence: string;
   /** Target RP pronunciation in IPA. Sourced from the British lexicon, never from the API. */
   readonly targetIpa: string;
   readonly feature: RpFeature;
+  readonly difficulty: Difficulty;
   /** What to listen for, in plain language. */
   readonly coachingNote: string;
   /** Contains a post-vocalic r position, so the rhoticity detector has something to judge. */
