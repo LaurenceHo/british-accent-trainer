@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# A new push supersedes the previous run on the same branch. Cancelling in-flight runs
+# keeps feedback fast and avoids queueing work on code nobody is waiting for — except on
+# master, where every commit's result is worth keeping.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, typecheck and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Pinned rather than `latest` so a Bun release cannot turn a green branch red
+          # without a commit explaining it. Bump deliberately.
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        # --frozen-lockfile fails if bun.lock is out of step with package.json, so a
+        # dependency added without committing the lockfile is caught here rather than
+        # resolving to something different on another machine.
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run build
+
+      - name: Test
+        # Tests mock at the HTTP boundary and never call the live Azure API, so no
+        # credentials are needed. If this ever starts requiring secrets, that is a bug in
+        # the test, not a reason to add them here.
+        run: bun run test
