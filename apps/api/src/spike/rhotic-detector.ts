@@ -81,16 +81,34 @@ export function analyseRhoticity(res: AzureAssessmentResponse): RhoticAnalysis {
   }
 
   const dropped = findings.filter((f) => f.verdict === 'r-dropped').length;
-  const produced = findings.filter((f) => f.verdict === 'r-produced').length;
+
+  // ASYMMETRIC RELIABILITY — measured over 24 probes across 12 r-contexts
+  // (`spike/results/r-contexts.json`):
+  //
+  //   "r-dropped"  →  2 true,  0 false   — no false positive ever observed
+  //   "r-produced" → 12 true, 10 false   — 55% precision, near a coin flip
+  //
+  // The detector only reliably recognises a dropped r in a couple of contexts (START in
+  // *car*, NURSE in *nurse*). Elsewhere it reports "r produced" for correct RP too, so
+  // that verdict cannot distinguish "you pronounced the r" from "I could not tell".
+  //
+  // We therefore report ONLY the positive confirmation and downgrade everything else to
+  // unknown. Telling a learner they produced an r when they did not would actively teach
+  // the wrong thing — and the spec's Boundaries require non-detection to read as unknown,
+  // never as a failure.
+  if (dropped === findings.length) {
+    return {
+      findings,
+      soundsBritish: true,
+      summary: `Non-rhotic in all ${dropped} r-position(s) — this is correct RP.`,
+    };
+  }
 
   return {
     findings,
-    soundsBritish: produced === 0 ? true : dropped === 0 ? false : null,
+    soundsBritish: null,
     summary:
-      produced === 0
-        ? `Non-rhotic in all ${dropped} r-position(s) — this is correct RP.`
-        : dropped === 0
-          ? `The r was produced in all ${produced} r-position(s) — this sounds American.`
-          : `Mixed: ${dropped} dropped, ${produced} produced.`,
+      'Could not confirm the r was dropped here. This detector only recognises certain ' +
+      'r-contexts reliably, so treat it as no result — not as a mistake.',
   };
 }

@@ -235,3 +235,163 @@ analysis missed, and it is worth developing before switching vendors.
 
 A per-feature detector is arguably a **better** product than a score: "you pronounced the r
 in *car* — RP drops it" is more useful teaching than "your pronunciation scored 64".
+
+---
+
+# UPDATE 2 — 2026-09-20: the detector validated on real speech, then bounded
+
+## 1. Real speech confirms the detector works — on *car*
+
+Recorded by a human through `/spike/recorder`:
+
+| Clip | Rhoticity verdict | Correct? |
+| --- | --- | --- |
+| car — British (no r) | "Non-rhotic — this is correct RP" | ✅ |
+| car — American (rolled r) | "The r was produced — sounds American" | ✅ |
+| water — British | "The r was produced — sounds American" | ❌ |
+| water — American | "The r was produced — sounds American" | ✅ |
+
+Both *car* clips classified correctly on natural speech. *water* failed exactly as it had
+synthetically — a reproducible limitation, not noise.
+
+The `en-GB` scores in the same run (*car* 63 vs 65) again show no accent discrimination,
+confirming the earlier result a third time.
+
+> Disregard the "*water*: British 68 vs American 59, Azure rewards RP" line the page
+> produced. Pron on that clip was **11.8**, indicating recognition largely collapsed. A
+> degenerate result, not a signal.
+
+## 2. Mapping which r-contexts work — only 2 of 12
+
+Twelve r-context words, each synthesised with an `en-GB` and an `en-US` voice and assessed
+at `en-US` (`spike/results/r-contexts.json`):
+
+| Word | Lexical set | Detector |
+| --- | --- | --- |
+| car | START | **WORKS** |
+| nurse | NURSE | **WORKS** |
+| hard | START | fails |
+| north, short | NORTH | fails |
+| more | FORCE | fails |
+| word | NURSE | fails |
+| there | SQUARE | fails |
+| near | NEAR | fails |
+| water, better, father | lettER | fails |
+
+**The stress hypothesis is wrong.** *hard*, *north*, *short*, *more*, *word*, *there* and
+*near* are all stressed r-contexts and all fail. Only *car* and *nurse* work, and no clean
+phonological rule separates them from the rest. With n=1 per condition, the honest reading
+is that the first two words tested happened to be favourable.
+
+**Rung 5 is far narrower than UPDATE 1 suggested.** It is not general rhoticity detection.
+
+## 3. The failures are asymmetric — and that is what makes it salvageable
+
+Across all 24 probes:
+
+| Verdict | True | False | Precision |
+| --- | --- | --- | --- |
+| "r dropped" (correct RP) | 2 | **0** | no false positive observed |
+| "r produced" (American) | 12 | **10** | **55%** — near a coin flip |
+
+Every failure is the **same direction**: the detector reports "r produced" for a speaker who
+correctly dropped it. It cannot distinguish *"you pronounced the r"* from *"I could not
+tell"*.
+
+### Design rule adopted
+
+**The detector may only ever confirm success.** `r-dropped` on every r-position →
+report correct RP. Anything else → **unknown**, explicitly framed as "no result", never as
+a mistake. Implemented in `src/spike/rhotic-detector.ts`.
+
+Telling a learner they produced an r when they did not would teach the opposite of the
+target accent — the worst failure this product can have. A confirm-only detector is far
+less useful than hoped, but it is honest and it cannot mislead.
+
+### Consequences for Task 8
+
+- Feedback may show **positive confirmation** on drills where an r was verifiably dropped.
+- It must **never** report a rhoticity failure.
+- Drills whose r-contexts fall outside the working set will simply return no verdict, so
+  the UI needs a first-class "not assessed" state — not a neutral-looking score.
+- Before relying on any *other* feature detector (BATH, LOT, YOD), run the same
+  precision measurement. Do not assume the asymmetry generalises.
+
+---
+
+# UPDATE 3 — 2026-09-20: sentence level, vowel features, and the root cause
+
+Two questions: does detection survive in a **sentence**, and do **vowel** contrasts detect
+better than rhoticity? Probes in `spike/results/features.json`.
+
+## Results
+
+| Feature | Word | Word-level | Sentence-level |
+| --- | --- | --- | --- |
+| BATH | *bath* | ✅ RP `b ɑ θ` vs GA `b æ f` | ✅ RP `b ɑ θ` vs GA `b æ θ` |
+| BATH | *ask*, *class* | — | ❌ both heard `æ` |
+| LOT | *Tom, got, job, shop* | ❌ both `ɑ` | ❌ both `ɑ` |
+| GOAT | *go, home, slowly* | — | ❌ both `oʊ` |
+| NON_RHOTIC_R | *car* | ✅ (UPDATE 2) | ❌ both `ɑɹ` |
+| NON_RHOTIC_R | *nurse* | ✅ (UPDATE 2) | ❌ both `ɝ` |
+
+**Detection is worse in sentences than in isolated words.** The two contexts that worked —
+*car* and *nurse* — stop working entirely in connected speech. Only *bath* survives.
+
+## Root cause: the en-US phoneme inventory has no symbols for RP vowels
+
+This explains every result above, and it is structural rather than a tuning problem.
+
+`NBestPhonemes` can only report phones that exist in Azure's **American** inventory. Across
+every probe the reported phones were drawn from `æ ɑ ɔ ɛ ə ɝ ɑɹ oʊ`. There is no `ɒ`, no
+`əʊ`, and no `ɑː` distinct from `ɑ`.
+
+So when an RP vowel has no American counterpart, it is mapped to the nearest one and the
+contrast disappears before we ever see it:
+
+| RP vowel | Nearest en-US phone | Detectable? |
+| --- | --- | --- |
+| /ɑː/ in *bath* | `ɑ` — **exists, and differs from `æ`** | ✅ the one success |
+| /ɒ/ in *got* | `ɑ` — same phone GA uses | ❌ collapses |
+| /əʊ/ in *go* | `oʊ` — same phone GA uses | ❌ collapses |
+| /ə/ in *water* | `ɚ` — r-coloured, no plain counterpart | ❌ collapses |
+
+**BATH works precisely because it is the one RP vowel whose American counterpart is a
+different existing symbol.** Everywhere else, RP and GA land on the same phone by
+construction, and no amount of probing will separate them.
+
+## Verdict
+
+**Azure cannot support automated RP feature detection as a product feature.** One word, in
+one feature, is not a basis to build on. The limitation is the phone inventory, so it
+applies to any future feature we might try.
+
+This supersedes the "promising, unproven" framing of Rung 5 in UPDATE 1 and the
+confirm-only design of UPDATE 2. The confirm-only rule stays in the code as a safety
+property, but the detector is not a shippable feature.
+
+## What Azure *is* good for, and it is not nothing
+
+- **`en-GB` neural TTS** — excellent reference audio. Unaffected by any of this.
+- **`en-GB` word and phoneme scores with timings** — a real measure of *intelligibility*,
+  usable for "this word was unclear", never for "this was not British".
+- **Recognition of what was said** — useful for catching a misread drill.
+
+## Recommendation: build the shadowing trainer
+
+Accent training is a shadowing loop — hear a model, imitate, compare, repeat — and the
+comparison is done by the learner's ear. Every part of that loop is available without any
+accent-scoring API:
+
+1. Native RP reference audio per drill (Azure TTS).
+2. The learner's recording, same format, stored alongside it.
+3. **A/B playback and waveform comparison** — pure signal processing on two WAV files we
+   already control. Nothing to gate, nothing to fail.
+4. Drills that concentrate one feature so the learner knows what to listen for.
+5. History, so progress is audible over weeks.
+
+Azure's clarity score rides along as a secondary signal, honestly labelled.
+
+**Consequence for the plan:** Task 10 (audio storage and replay) moves from a Phase 3
+retention feature to the **core mechanism**, and Task 8 becomes comparison UI rather than
+scoring UI.

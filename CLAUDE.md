@@ -17,7 +17,8 @@ bun install                                   # Install workspace dependencies
 bun run build                                 # Build/typecheck all workspaces
 bun run test                                  # Run all tests
 bun run lint                                  # ESLint (--fix to autofix)
-bun run dev                                   # Run the Worker API locally
+bun run dev                                   # Run the Worker API locally (from repo root)
+bun run dev -- --port 8788                    # ...on a specific port
 
 # Workspace-scoped (args do NOT pass through the root script cleanly)
 bun run --filter api test                     # API tests only
@@ -106,7 +107,18 @@ them for sounding American and inverts the app's purpose.
 - **Renaming the project directory breaks `node_modules`.** Bun symlinks use absolute
   paths, so a rename leaves every link dangling and `bunx` silently tries to reinstall.
   Fix: `rm -rf node_modules apps/api/node_modules apps/api/.wrangler && bun install`.
+- **`bunx wrangler` from the repo root silently downloads a different wrangler.** Wrangler
+  is a dependency of `apps/api`, not the root, so `bunx` finds nothing locally and fetches
+  `wrangler@latest` into a temp directory. On Windows that download often half-fails,
+  producing `Error: Cannot find module 'miniflare'` from a path under
+  `AppData\Local\Temp\bunx-*-wrangler@latest`. **A `bunx-` temp path in a stack trace means
+  the wrong wrangler is running.** Fix: `rm -rf "$TEMP/bunx-"*"wrangler@latest"`, then run
+  `bun run dev` from the root, or `bunx wrangler` only from inside `apps/api`.
 - **30-second audio cap** on the REST assessment path. Enforce as request validation.
+- **F0 allows ONE concurrent transcription.** Two assessments in `Promise.all` — even of the
+  same clip — return 429 "The number of parallel requests exceeded the number of allowed
+  concurrent transcriptions." Always run assessments **sequentially**, and retry 429 with
+  backoff. This applies to the attempts endpoint too, not just the spike.
 - **Audio must be 16 kHz / 16-bit / mono PCM WAV.** Browsers emit WebM/Opus, so decode via
   `AudioContext` and re-encode client-side. Decode rather than trusting the container —
   this is also what makes Safari work.

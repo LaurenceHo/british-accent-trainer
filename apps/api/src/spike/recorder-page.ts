@@ -207,7 +207,9 @@ async function record(clip, btn) {
     statusEl.textContent = 'Done — ' + clip.label + ' scored ' + json.accuracyScore + '.';
     render();
   } catch (e) {
-    statusEl.textContent = 'Failed: ' + e.message;
+    statusEl.textContent = e.message.includes('429')
+      ? 'Azure is busy (free tier allows one request at a time). Wait a moment and re-record.'
+      : 'Failed: ' + e.message;
   }
   wire();
 }
