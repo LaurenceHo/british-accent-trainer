@@ -72,21 +72,45 @@ export type ScoringErrorCode =
   /** Anything else from upstream. */
   | 'upstream';
 
+/** Optional detail attached to a {@link ScoringError}. */
+export interface ScoringErrorOptions {
+  /** Upstream HTTP status, when the failure came from a response. */
+  readonly status?: number;
+  /**
+   * Overrides the default retryability for the code.
+   *
+   * Needed because some upstream faults are retryable despite not being rate limits —
+   * a provider reporting its own internal error, for instance.
+   */
+  readonly retryable?: boolean;
+  /** How long upstream asked us to wait, when it said. */
+  readonly retryAfterMs?: number;
+  /** The underlying error, preserved so the original is still diagnosable. */
+  readonly cause?: unknown;
+}
+
 /** A scoring failure carrying enough detail for the caller to choose a response. */
 export class ScoringError extends Error {
+  readonly status: number | undefined;
+  /** How long upstream asked us to wait, when it said so. */
+  readonly retryAfterMs: number | undefined;
+  readonly #retryable: boolean;
+
   constructor(
     readonly code: ScoringErrorCode,
     message: string,
-    /** Upstream HTTP status, when the failure came from a response. */
-    readonly status?: number,
+    options: ScoringErrorOptions = {},
   ) {
-    super(message);
+    super(message, { cause: options.cause });
     this.name = 'ScoringError';
+    this.status = options.status;
+    this.retryAfterMs = options.retryAfterMs;
+    this.#retryable = options.retryable ?? code === 'throttled';
   }
 
   /** Whether retrying the identical request could plausibly succeed. */
   get retryable(): boolean {
-    return this.code === 'throttled';
+    return this.#retryable;
   }
 }
 
