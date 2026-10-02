@@ -2,7 +2,8 @@ import { env } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import app from '../src/index';
 import { RP_FEATURES } from '../src/domain';
-import type { ProgressResponse } from '../src/routes/progress';
+import { windowStart } from '../src/routes/progress';
+import type { ProgressResponse } from '../src/types';
 import { seedDrill } from './route-helpers';
 
 /**
@@ -11,14 +12,19 @@ import { seedDrill } from './route-helpers';
  */
 
 let counter = 0;
-async function attempt(drillId: string, createdAt: string, accuracy: number | null = 80) {
+async function attempt(
+  drillId: string,
+  createdAt: string,
+  accuracy: number | null = 80,
+  fluency: number | null = accuracy,
+) {
   counter += 1;
   await env.DB.prepare(
     `INSERT INTO attempts (id, drill_id, created_at, accuracy_score, fluency_score,
                            word_scores, feature_verdicts)
      VALUES (?, ?, ?, ?, ?, '[]', '[]')`,
   )
-    .bind(`a${counter}`, drillId, createdAt, accuracy, accuracy)
+    .bind(`a${counter}`, drillId, createdAt, accuracy, fluency)
     .run();
 }
 
@@ -92,11 +98,28 @@ describe('GET /api/progress', () => {
 
     const utc = feature(await progress(), 'BATH')?.days[0]?.date;
     const local = feature(await progress('?tzOffsetMinutes=600'), 'BATH')?.days[0]?.date;
-    const west = feature(await progress('?tzOffsetMinutes=-300'), 'BATH')?.days[0]?.date;
-
     expect(utc).toBe('2026-06-28');
     expect(local).toBe('2026-06-29');
-    expect(west).toBe('2026-06-28');
+  });
+
+  it('moves an early-morning UTC session back a day for a client west of UTC', async () => {
+    // 02:00 UTC on the 29th is 21:00 on the 28th at UTC-5. (A late-evening UTC time would
+    // stay on the same date either way and prove nothing about the offset.)
+    await attempt('bath-1', '2026-06-29T02:00:00.000Z');
+
+    expect(feature(await progress(), 'BATH')?.days[0]?.date).toBe('2026-06-29');
+    expect(feature(await progress('?tzOffsetMinutes=-300'), 'BATH')?.days[0]?.date).toBe(
+      '2026-06-28',
+    );
+  });
+
+  it('handles non-hour offsets', async () => {
+    // UTC+5:45 (Nepal). 18:30 UTC on the 28th is 00:15 on the 29th.
+    await attempt('bath-1', '2026-06-28T18:30:00.000Z');
+
+    expect(feature(await progress('?tzOffsetMinutes=345'), 'BATH')?.days[0]?.date).toBe(
+      '2026-06-29',
+    );
   });
 
   it('excludes attempts outside the window', async () => {
@@ -139,5 +162,106 @@ describe('GET /api/progress', () => {
     for (const query of bad) {
       expect((await app.request(`/api/progress${query}`, {}, env)).status, query).toBe(400);
     }
+  });
+});
+
+describe('window of whole local days', () => {
+  // "Now" in these tests is 2026-06-30T12:00Z.
+
+  it('starts at local midnight, not at the current time of day minus N days', () => {
+    // days=7 is today and the six days before it, each complete.
+    expect(windowStart(Date.parse('2026-06-30T12:00:00.000Z'), 7, 0)).toBe(
+      '2026-06-24T00:00:00.000Z',
+    );
+    // At UTC+10 local midnight on the 24th is 14:00 UTC on the 23rd.
+    expect(windowStart(Date.parse('2026-06-30T12:00:00.000Z'), 7, 600)).toBe(
+      '2026-06-23T14:00:00.000Z',
+    );
+  });
+
+  it('includes the whole oldest day, so it does not read as a fall in practice', async () => {
+    // Both on the oldest day of a 7-day window. Subtracting 7×24h from now would have
+    // started at 12:00 on the 23rd and admitted only part of a different day.
+    await attempt('bath-1', '2026-06-24T00:30:00.000Z');
+    await attempt('bath-1', '2026-06-24T09:00:00.000Z');
+
+    const days = feature(await progress('?days=7'), 'BATH')?.days ?? [];
+
+    expect(days).toEqual([expect.objectContaining({ date: '2026-06-24', attempts: 2 })]);
+  });
+
+  it('excludes an attempt one millisecond before the window', async () => {
+    await attempt('bath-1', '2026-06-23T23:59:59.999Z');
+    await attempt('bath-1', '2026-06-24T00:00:00.000Z');
+
+    expect(feature(await progress('?days=7'), 'BATH')?.attempts).toBe(1);
+  });
+
+  it('never returns more dates than the window has days', async () => {
+    for (let d = 20; d <= 30; d++) {
+      await attempt('bath-1', `2026-06-${d}T12:00:00.000Z`);
+    }
+
+    expect(feature(await progress('?days=7'), 'BATH')?.days).toHaveLength(7);
+  });
+
+  it('accepts the limits of days', async () => {
+    expect((await progress('?days=1')).windowDays).toBe(1);
+    expect((await progress('?days=365')).windowDays).toBe(365);
+  });
+});
+
+describe('averages', () => {
+  it('reports accuracy and fluency from their own columns', async () => {
+    // Distinct values, so swapped columns would fail.
+    await attempt('bath-1', '2026-06-29T09:00:00.000Z', 60, 90);
+
+    expect(feature(await progress(), 'BATH')?.days[0]).toMatchObject({
+      averageAccuracy: 60,
+      averageFluency: 90,
+    });
+  });
+
+  it('reports a null average for a day where nothing was scored', async () => {
+    await attempt('bath-1', '2026-06-29T09:00:00.000Z', null);
+
+    expect(feature(await progress(), 'BATH')?.days[0]).toMatchObject({
+      attempts: 1,
+      averageAccuracy: null,
+    });
+  });
+});
+
+describe('strict parameters', () => {
+  it('rejects values that Number() would quietly accept', async () => {
+    for (const query of ['?days=', '?days=1e2', '?days=0x10', '?tzOffsetMinutes=']) {
+      expect((await app.request(`/api/progress${query}`, {}, env)).status, query).toBe(400);
+    }
+  });
+
+  it('explains the offset sign in the error, since it is the opposite of JavaScript', async () => {
+    const res = await app.request('/api/progress?tzOffsetMinutes=-840', {}, env);
+    const { error } = (await res.json()) as { error: string };
+
+    expect(error).toMatch(/east of UTC/);
+    expect(error).toMatch(/getTimezoneOffset/);
+  });
+});
+
+describe('unknown features', () => {
+  it('logs attempts on a feature outside RP_FEATURES rather than dropping them silently', async () => {
+    // Only reachable by a manual database edit: seed content is typed.
+    await env.DB.prepare(
+      `INSERT INTO drills
+       (id, sentence, target_ipa, feature, difficulty, coaching_note, has_r_context, sort_order)
+       VALUES ('odd', 's', 'x', 'STRUT', 4, 'n', 0, 1)`,
+    ).run();
+    await attempt('odd', '2026-06-29T09:00:00.000Z');
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await progress();
+
+    expect(logged.mock.calls.flat().join(' ')).toContain('STRUT');
+    logged.mockRestore();
   });
 });

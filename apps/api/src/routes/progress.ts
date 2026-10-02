@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { RP_FEATURE_LABELS, RP_FEATURES, type RpFeature } from '../domain';
-import type { Env } from '../types';
+import { RP_FEATURE_LABELS, RP_FEATURES } from '../domain';
+import type { DailyProgress, Env, ProgressResponse } from '../types';
 
 /**
  * Practice progress, grouped by RP feature.
@@ -12,43 +12,20 @@ import type { Env } from '../types';
  *
  * Grouping by feature rather than one global average is deliberate: "LOT is getting
  * practised, YOD never is" is actionable, and a single number is not.
+ *
+ * Known limitation: one fixed UTC offset is applied across the whole window, so on days
+ * observed under the other daylight-saving offset, attempts in the hour around midnight
+ * can land on the neighbouring date. Bucketing by IANA zone would fix it; at one hour of
+ * a practice day it has not been worth the cost.
  */
 
 const DEFAULT_WINDOW_DAYS = 90;
 const MAX_WINDOW_DAYS = 365;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Real-world UTC offsets span -12:00 to +14:00. */
 const MIN_TZ_OFFSET_MINUTES = -12 * 60;
 const MAX_TZ_OFFSET_MINUTES = 14 * 60;
-
-/** One day's practice on one feature. */
-export interface DailyProgress {
-  /** Calendar date in the requested timezone, `YYYY-MM-DD`. */
-  readonly date: string;
-  readonly attempts: number;
-  /** Mean clarity accuracy, 0-100, or null if no attempt that day produced a score. */
-  readonly averageAccuracy: number | null;
-  readonly averageFluency: number | null;
-}
-
-/** Progress on one RP feature. */
-export interface FeatureProgress {
-  readonly feature: RpFeature;
-  readonly label: string;
-  /** Total attempts in the window. Zero means the feature has not been practised. */
-  readonly attempts: number;
-  /** Oldest first, one entry per day with at least one attempt. */
-  readonly days: readonly DailyProgress[];
-}
-
-/** Body of `GET /api/progress`. */
-export interface ProgressResponse {
-  /** Always `clarity`: the averages measure intelligibility, never accent. */
-  readonly measures: 'clarity';
-  readonly windowDays: number;
-  /** Every RP feature, including unpractised ones, in a fixed order. */
-  readonly features: readonly FeatureProgress[];
-}
 
 interface DayRow {
   readonly feature: string;
@@ -58,7 +35,11 @@ interface DayRow {
   readonly fluency: number | null;
 }
 
-/** Parses an optional integer query parameter within inclusive bounds. */
+/**
+ * Parses an optional integer query parameter within inclusive bounds.
+ *
+ * Strict digits only: `Number()` alone would accept `''` as 0 and `1e2` as 100.
+ */
 function intParam(
   raw: string | undefined,
   fallback: number,
@@ -66,13 +47,33 @@ function intParam(
   max: number,
 ): number | null {
   if (raw === undefined) return fallback;
+  if (!/^-?\d+$/.test(raw)) return null;
   const value = Number(raw);
-  return Number.isInteger(value) && value >= min && value <= max ? value : null;
+  return value >= min && value <= max ? value : null;
 }
 
 /** Rounds to one decimal place, keeping null as null. */
 function round1(value: number | null): number | null {
   return value === null ? null : Math.round(value * 10) / 10;
+}
+
+/**
+ * The UTC instant at which a window of `days` whole local days begins.
+ *
+ * "Last 7 days" means today plus the six before it, each complete. Subtracting 7 × 24h
+ * from now would instead start part-way through a day: the oldest bucket would hold only
+ * the hours after the current time of day, reading as a fall in practice, and seven days
+ * would span eight dates.
+ *
+ * @param now - Current time, in milliseconds since the epoch.
+ * @param days - Window length in whole local days, today included.
+ * @param offsetMinutes - Minutes east of UTC.
+ */
+export function windowStart(now: number, days: number, offsetMinutes: number): string {
+  const offsetMs = offsetMinutes * 60 * 1000;
+  const localMidnightToday = Math.floor((now + offsetMs) / DAY_MS) * DAY_MS;
+  const localStart = localMidnightToday - (days - 1) * DAY_MS;
+  return new Date(localStart - offsetMs).toISOString();
 }
 
 const progress = new Hono<{ Bindings: Env }>();
@@ -81,9 +82,10 @@ const progress = new Hono<{ Bindings: Env }>();
  * Returns practice progress per RP feature.
  *
  * Query parameters:
- * - `days` — window size, 1 to 365, default 90.
- * - `tzOffsetMinutes` — the client's UTC offset, so days break at local midnight. Without
- *   it, an evening practice session east of UTC splits across two "days". Default 0.
+ * - `days` — whole local days to cover, today included. 1 to 365, default 90.
+ * - `tzOffsetMinutes` — the client's offset in **minutes east of UTC**, so days break at
+ *   local midnight. UTC+10 is `600`, UTC-5 is `-300`. Note this is the **negation** of
+ *   JavaScript's `Date.prototype.getTimezoneOffset()`, which counts minutes west. Default 0.
  */
 progress.get('/', async (c) => {
   const windowDays = intParam(c.req.query('days'), DEFAULT_WINDOW_DAYS, 1, MAX_WINDOW_DAYS);
@@ -98,10 +100,18 @@ progress.get('/', async (c) => {
     MAX_TZ_OFFSET_MINUTES,
   );
   if (tzOffset === null) {
-    return c.json({ error: 'tzOffsetMinutes must be an integer from -720 to 840' }, 400);
+    return c.json(
+      {
+        error:
+          `tzOffsetMinutes must be minutes east of UTC, an integer from ` +
+          `${MIN_TZ_OFFSET_MINUTES} to ${MAX_TZ_OFFSET_MINUTES} ` +
+          `(the negation of Date.prototype.getTimezoneOffset())`,
+      },
+      400,
+    );
   }
 
-  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const since = windowStart(Date.now(), windowDays, tzOffset);
   const shift = `${tzOffset} minutes`;
 
   // `shift` is built from a validated integer, but it is still bound, never interpolated.
@@ -115,7 +125,7 @@ progress.get('/', async (c) => {
        JOIN drills d ON d.id = a.drill_id
       WHERE a.created_at >= ?
       GROUP BY d.feature, day
-      ORDER BY day`,
+      ORDER BY day, d.feature`,
   )
     .bind(shift, since)
     .all<DayRow>();
@@ -130,6 +140,15 @@ progress.get('/', async (c) => {
       averageFluency: round1(row.fluency),
     });
     byFeature.set(row.feature, days);
+  }
+
+  // Content cannot introduce an unknown feature — `Drill.feature` is typed, so seed data
+  // fails to compile first — but a manual database edit can. Those attempts would vanish
+  // from every total, so say so rather than drop them silently.
+  const known = new Set<string>(RP_FEATURES);
+  const unknown = [...byFeature.keys()].filter((f) => !known.has(f));
+  if (unknown.length > 0) {
+    console.error(`progress: attempts on unknown features omitted: ${unknown.join(', ')}`);
   }
 
   const body: ProgressResponse = {
