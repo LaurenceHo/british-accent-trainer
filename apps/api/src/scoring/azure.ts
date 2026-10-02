@@ -1,12 +1,3 @@
-import {
-  ScoringError,
-  type ClarityAssessment,
-  type PhonemeTiming,
-  type ScoringProvider,
-  type WordClarity,
-  type WordErrorType,
-} from './provider';
-
 /**
  * Azure AI Speech pronunciation assessment, over the short-audio REST endpoint.
  *
@@ -16,6 +7,16 @@ import {
  *
  * Returns clarity only. The provider cannot discriminate accent — see `spike/FINDINGS.md`.
  */
+
+import {
+  ScoringError,
+  type ClarityAssessment,
+  type PhonemeTiming,
+  type ScoringErrorCode,
+  type ScoringProvider,
+  type WordClarity,
+  type WordErrorType,
+} from './provider';
 
 /** The locale assessed against. British English, even though it does not detect RP. */
 const LOCALE = 'en-GB';
@@ -42,7 +43,6 @@ interface AzureWord {
 }
 
 interface AzureNBest {
-  readonly Display?: string;
   readonly AccuracyScore: number;
   readonly FluencyScore: number;
   readonly CompletenessScore: number;
@@ -104,6 +104,7 @@ export interface AzureConfig {
   readonly region: string;
 }
 
+/** Scores a recording against its reference text via the Azure REST assessment endpoint. */
 export class AzureScoringProvider implements ScoringProvider {
   readonly name = 'azure';
 
@@ -178,8 +179,8 @@ export class AzureScoringProvider implements ScoringProvider {
 }
 
 /** Classifies an upstream HTTP status so callers need not know Azure's status codes. */
-function statusToCode(status: number) {
-  if (status === 429) return 'throttled' as const;
-  if (status === 401 || status === 403) return 'unauthorised' as const;
-  return 'upstream' as const;
+function statusToCode(status: number): ScoringErrorCode {
+  if (status === 429) return 'throttled';
+  if (status === 401 || status === 403) return 'unauthorised';
+  return 'upstream';
 }

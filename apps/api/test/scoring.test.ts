@@ -12,11 +12,6 @@ import fixture from './fixtures/azure-assessment.json';
 const CONFIG = { key: 'test-key', region: 'testregion' };
 const WAV = new ArrayBuffer(1024);
 
-/** The parts of a captured `fetch` call the tests assert against. */
-interface CapturedRequest {
-  readonly headers: Record<string, string>;
-}
-
 /** Stubs `fetch` with a fixed response. Returns the spy so calls can be asserted. */
 function stubFetch(body: unknown, init: ResponseInit = { status: 200 }) {
   // Parameters are declared so `mock.calls` is a typed 2-tuple rather than empty.
@@ -100,7 +95,7 @@ describe('AzureScoringProvider.assess', () => {
     const spy = stubFetch(fixture);
     await new AzureScoringProvider(CONFIG).assess(WAV, 'Pass me a glass of water');
 
-    const init = spy.mock.calls[0]?.[1] as CapturedRequest;
+    const init = spy.mock.calls[0]?.[1] as { headers: Record<string, string> };
     const decoded = JSON.parse(atob(init.headers['Pronunciation-Assessment'] ?? ''));
 
     expect(decoded.ReferenceText).toBe('Pass me a glass of water');
