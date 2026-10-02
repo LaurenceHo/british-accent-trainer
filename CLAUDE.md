@@ -212,5 +212,13 @@ git branch -d feat/x
 Never use `--no-ff`. If `git merge` refuses with "not possible to fast-forward", rebase the
 branch first — do not reach for `--no-ff` to force it through.
 
+**CI** (`.github/workflows/ci.yml`) runs `bun run lint`, `bun run build` and `bun run test`
+on every pull request and on pushes to `master`. Run all three locally before pushing —
+CI is a backstop, not the first check.
+
+It installs with `--frozen-lockfile`, so a dependency added without committing `bun.lock`
+fails there. Tests need no Azure credentials; if a test ever starts requiring them, that is
+a bug in the test rather than a reason to add secrets to CI.
+
 **Ask before:** swapping the scoring vendor, adding a dependency, or changing the D1 schema
 once it holds data.

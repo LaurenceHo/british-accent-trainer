@@ -1,5 +1,7 @@
 # British Accent Trainer
 
+[![CI](https://github.com/LaurenceHo/british-accent-trainer/actions/workflows/ci.yml/badge.svg)](https://github.com/LaurenceHo/british-accent-trainer/actions/workflows/ci.yml)
+
 A Progressive Web App for practising **Received Pronunciation** — hear a native model,
 record yourself, and compare the two.
 
@@ -139,7 +141,9 @@ bun run build
 bun run lint
 ```
 
-The test suite mocks at the HTTP boundary and never calls the live Azure API.
+The test suite mocks at the HTTP boundary and never calls the live Azure API — so it needs
+no Azure credentials, and the same three commands run in CI on every pull request
+(`.github/workflows/ci.yml`).
 
 ## Project structure
 
