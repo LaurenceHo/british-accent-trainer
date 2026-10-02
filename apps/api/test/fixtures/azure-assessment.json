@@ -1,0 +1,233 @@
+{
+  "RecognitionStatus": "Success",
+  "Offset": 1800000,
+  "Duration": 16300000,
+  "DisplayText": "Pass me a glass of water.",
+  "SNR": 44.516376,
+  "NBest": [
+    {
+      "Confidence": 0.983671,
+      "Lexical": "Pass me a glass of water",
+      "ITN": "Pass me a glass of water",
+      "MaskedITN": "pass me a glass of water",
+      "Display": "Pass me a glass of water.",
+      "AccuracyScore": 100,
+      "FluencyScore": 100,
+      "CompletenessScore": 100,
+      "PronScore": 100,
+      "Words": [
+        {
+          "Word": "Pass",
+          "Offset": 1800000,
+          "Duration": 3300000,
+          "Confidence": 0,
+          "AccuracyScore": 100,
+          "ErrorType": "None",
+          "Syllables": [
+            {
+              "Syllable": "",
+              "Offset": 1800000,
+              "Duration": 3300000,
+              "AccuracyScore": 100
+            }
+          ],
+          "Phonemes": [
+            {
+              "Phoneme": "",
+              "Offset": 1800000,
+              "Duration": 1100000,
+              "AccuracyScore": 100
+            },
+            {
+              "Phoneme": "",
+              "Offset": 3000000,
+              "Duration": 1000000,
+              "AccuracyScore": 100
+            },
+            {
+              "Phoneme": "",
+              "Offset": 4100000,
+              "Duration": 1000000,
+              "AccuracyScore": 100
+            }
+          ]
+        },
+        {
+          "Word": "me",
+          "Offset": 5200000,
+          "Duration": 1900000,
+          "Confidence": 0,
+          "AccuracyScore": 100,
+          "ErrorType": "None",
+          "Syllables": [
+            {
+              "Syllable": "",
+              "Offset": 5200000,
+              "Duration": 1900000,
+              "AccuracyScore": 100
+            }
+          ],
+          "Phonemes": [
+            {
+              "Phoneme": "",
+              "Offset": 5200000,
+              "Duration": 900000,
+              "AccuracyScore": 100
+            },
+            {
+              "Phoneme": "",
+              "Offset": 6200000,
+              "Duration": 900000,
+              "AccuracyScore": 100
+            }
+          ]
+        },
+        {
+          "Word": "a",
+          "Offset": 7200000,
+          "Duration": 600000,
+          "Confidence": 0,
+          "AccuracyScore": 100,
+          "ErrorType": "None",
+          "Syllables": [
+            {
+              "Syllable": "",
+              "Offset": 7200000,
+              "Duration": 600000,
+              "AccuracyScore": 100
+            }
+          ],
+          "Phonemes": [
+            {
+              "Phoneme": "",
+              "Offset": 7200000,
+              "Duration": 600000,
+              "AccuracyScore": 100
+            }
+          ]
+        },
+        {
+          "Word": "glass",
+          "Offset": 7900000,
+          "Duration": 3000000,
+          "Confidence": 0,
+          "AccuracyScore": 100,
+          "ErrorType": "None",
+          "Syllables": [
+            {
+              "Syllable": "",
+              "Offset": 7900000,
+              "Duration": 3000000,
+              "AccuracyScore": 100
+            }
+          ],
+          "Phonemes": [
+            {
+              "Phoneme": "",
+              "Offset": 7900000,
+              "Duration": 600000,
+              "AccuracyScore": 100
+            },
+            {
+              "Phoneme": "",
+              "Offset": 8600000,
+              "Duration": 500000,
+              "AccuracyScore": 100
+            },
+            {
+              "Phoneme": "",
+              "Offset": 9200000,
+              "Duration": 700000,
+              "AccuracyScore": 100
+            },
+            {
+              "Phoneme": "",
+              "Offset": 10000000,
+              "Duration": 900000,
+              "AccuracyScore": 100
+            }
+          ]
+        },
+        {
+          "Word": "of",
+          "Offset": 11000000,
+          "Duration": 1300000,
+          "Confidence": 0,
+          "AccuracyScore": 100,
+          "ErrorType": "None",
+          "Syllables": [
+            {
+              "Syllable": "",
+              "Offset": 11000000,
+              "Duration": 1300000,
+              "AccuracyScore": 100
+            }
+          ],
+          "Phonemes": [
+            {
+              "Phoneme": "",
+              "Offset": 11000000,
+              "Duration": 700000,
+              "AccuracyScore": 100
+            },
+            {
+              "Phoneme": "",
+              "Offset": 11800000,
+              "Duration": 500000,
+              "AccuracyScore": 100
+            }
+          ]
+        },
+        {
+          "Word": "water",
+          "Offset": 12400000,
+          "Duration": 5700000,
+          "Confidence": 0,
+          "AccuracyScore": 99,
+          "ErrorType": "None",
+          "Syllables": [
+            {
+              "Syllable": "",
+              "Grapheme": "water",
+              "Offset": 12400000,
+              "Duration": 5700000,
+              "AccuracyScore": 99
+            }
+          ],
+          "Phonemes": [
+            {
+              "Phoneme": "",
+              "Offset": 12400000,
+              "Duration": 900000,
+              "AccuracyScore": 99
+            },
+            {
+              "Phoneme": "",
+              "Offset": 13400000,
+              "Duration": 600000,
+              "AccuracyScore": 99
+            },
+            {
+              "Phoneme": "",
+              "Offset": 14100000,
+              "Duration": 1400000,
+              "AccuracyScore": 99
+            },
+            {
+              "Phoneme": "",
+              "Offset": 15600000,
+              "Duration": 900000,
+              "AccuracyScore": 99
+            },
+            {
+              "Phoneme": "",
+              "Offset": 16600000,
+              "Duration": 1500000,
+              "AccuracyScore": 99
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
