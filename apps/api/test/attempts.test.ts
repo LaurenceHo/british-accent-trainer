@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import app from '../src/index';
 import type { Attempt } from '../src/domain';
 import fixture from './fixtures/azure-assessment.json';
+import { buildWav } from './build-wav';
 
 /**
  * End-to-end tests for recording submission: validation, scoring, persistence.
@@ -11,35 +12,9 @@ import fixture from './fixtures/azure-assessment.json';
  * calling the live Azure API.
  */
 
-/** Builds a valid 16 kHz mono 16-bit WAV of the given duration. */
-function buildWav(seconds = 1): ArrayBuffer {
-  const dataBytes = Math.round(32_000 * seconds);
-  const buffer = new ArrayBuffer(44 + dataBytes);
-  const view = new DataView(buffer);
-  const ascii = (offset: number, text: string) => {
-    for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
-  };
-
-  ascii(0, 'RIFF');
-  view.setUint32(4, 36 + dataBytes, true);
-  ascii(8, 'WAVE');
-  ascii(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, 16_000, true);
-  view.setUint32(28, 32_000, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  ascii(36, 'data');
-  view.setUint32(40, dataBytes, true);
-
-  return buffer;
-}
-
 function stubAzure(body: unknown, init: ResponseInit = { status: 200 }) {
   const spy = vi.fn(async (_input: unknown, _init?: unknown) =>
-    typeof body === 'string' ? new Response(body, init) : new Response(JSON.stringify(body), init),
+    new Response(typeof body === 'string' ? body : JSON.stringify(body), init),
   );
   vi.stubGlobal('fetch', spy);
   return spy;
@@ -53,6 +28,11 @@ async function seedDrill(id = 'test-drill', sentence = 'Pass me a glass of water
   )
     .bind(id, sentence)
     .run();
+}
+
+async function countAttempts(): Promise<number | undefined> {
+  const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM attempts').first<{ n: number }>();
+  return row?.n;
 }
 
 function submit(body: ArrayBuffer, drillId = 'test-drill') {
@@ -81,8 +61,7 @@ describe('POST /api/attempts', () => {
     expect(body.attempt.wordScores.length).toBeGreaterThan(0);
     expect(body.recognisedText).toBe('Pass me a glass of water.');
 
-    const stored = await env.DB.prepare('SELECT COUNT(*) AS n FROM attempts').first<{ n: number }>();
-    expect(stored?.n).toBe(1);
+    expect(await countAttempts()).toBe(1);
   });
 
   it('scores against the drill sentence, never client-supplied text', async () => {
@@ -102,7 +81,7 @@ describe('POST /api/attempts', () => {
   });
 
   it('requires a drillId', async () => {
-    const res = await app.request('/api/attempts', { method: 'POST', body: buildWav() }, env);
+    const res = await submit(buildWav(), '');
     expect(res.status).toBe(400);
   });
 
@@ -125,7 +104,7 @@ describe('POST /api/attempts', () => {
   it('enforces the 30-second cap locally rather than upstream', async () => {
     const spy = stubAzure(fixture);
 
-    const res = await submit(buildWav(31));
+    const res = await submit(buildWav({ dataBytes: 32_000 * 31 }));
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: string }).error).toMatch(/30 seconds/);
     expect(spy).not.toHaveBeenCalled();
@@ -151,8 +130,7 @@ describe('POST /api/attempts', () => {
     stubAzure({ RecognitionStatus: 'NoMatch' });
     await submit(buildWav());
 
-    const stored = await env.DB.prepare('SELECT COUNT(*) AS n FROM attempts').first<{ n: number }>();
-    expect(stored?.n).toBe(0);
+    expect(await countAttempts()).toBe(0);
   });
 });
 
