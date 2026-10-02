@@ -84,7 +84,9 @@ export function parseWavHeader(audio: ArrayBuffer): WavFormat {
     const body = offset + 8;
 
     if (chunkId === 'fmt ') {
-      if (body + 16 > audio.byteLength) {
+      // A PCM format chunk is at least 16 bytes. A smaller declared size would make the
+      // reads below run into the next chunk and misparse a crafted file.
+      if (chunkSize < 16 || body + 16 > audio.byteLength) {
         throw new InvalidAudioError('WAV format chunk is truncated');
       }
       if (view.getUint16(body, true) !== WAVE_FORMAT_PCM) {

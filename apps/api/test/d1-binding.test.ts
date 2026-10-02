@@ -21,3 +21,12 @@ describe('R2 binding', () => {
     expect(missing).toBeNull();
   });
 });
+
+describe('test credentials', () => {
+  it('uses dummy Azure credentials, never the real ones from .dev.vars', () => {
+    // vitest.config.ts overrides these. If the override stops winning, a test that forgot
+    // to stub fetch would call live Azure with the real key — this fails first.
+    expect(env.AZURE_SPEECH_KEY).toBe('test-key-not-real');
+    expect(env.AZURE_SPEECH_REGION).toBe('testregion');
+  });
+});

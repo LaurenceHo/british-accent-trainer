@@ -95,3 +95,21 @@ describe('assertScorableWav', () => {
     expect(() => assertScorableWav(buildWav({ dataBytes: justOver }))).toThrow(/30 seconds/);
   });
 });
+
+describe('crafted headers', () => {
+  it('rejects a fmt chunk declaring fewer than 16 bytes', () => {
+    // The parser reads 16 bytes of format fields; a smaller declared size would make it
+    // read into the next chunk and misparse the file.
+    const wav = buildWav();
+    new DataView(wav).setUint32(16, 8, true);
+
+    expect(() => parseWavHeader(wav)).toThrow(InvalidAudioError);
+  });
+
+  it('terminates cleanly on a chunk size near 2^32', () => {
+    const wav = buildWav({ extraChunk: 'LIST' });
+    new DataView(wav).setUint32(40, 0xffffffff, true);
+
+    expect(() => parseWavHeader(wav)).toThrow(InvalidAudioError);
+  });
+});

@@ -16,7 +16,14 @@ export default defineConfig({
     cloudflareTest({
       wrangler: { configPath: './wrangler.jsonc' },
       miniflare: {
-        bindings: { TEST_MIGRATIONS: migrations },
+        bindings: {
+          TEST_MIGRATIONS: migrations,
+          // Dummy credentials override the real ones in .dev.vars. The suite must never
+          // call Azure; with real values, a test that forgot to stub fetch would do so
+          // silently, spending quota and sending the real key.
+          AZURE_SPEECH_KEY: 'test-key-not-real',
+          AZURE_SPEECH_REGION: 'testregion',
+        },
       },
     }),
   ],

@@ -35,6 +35,16 @@ async function countAttempts(): Promise<number | undefined> {
   return row?.n;
 }
 
+/** Inserts an attempt row directly, so ordering tests control the timestamps. */
+async function insertAttempt(id: string, createdAt: string, wordScores = '[]') {
+  await env.DB.prepare(
+    `INSERT INTO attempts (id, drill_id, created_at, word_scores, feature_verdicts)
+     VALUES (?, 'test-drill', ?, ?, '[]')`,
+  )
+    .bind(id, createdAt, wordScores)
+    .run();
+}
+
 function submit(body: ArrayBuffer, drillId = 'test-drill') {
   const query = drillId ? `?drillId=${drillId}` : '';
   return app.request(`/api/attempts${query}`, { method: 'POST', body }, env);
@@ -118,13 +128,61 @@ describe('POST /api/attempts', () => {
     expect(((await res.json()) as { code: string }).code).toBe('not-recognised');
   });
 
-  it('reports throttling as retryable', async () => {
-    stubAzure('rate limited', { status: 429 });
+  it('reports throttling as retryable, after the provider has retried', async () => {
+    // Retry-After: 0 keeps the test fast without fake timers. Asserting the call count
+    // matters: without it, a change that dropped retries entirely would still pass.
+    const spy = vi.fn(
+      async () => new Response('rate limited', { status: 429, headers: { 'Retry-After': '0' } }),
+    );
+    vi.stubGlobal('fetch', spy);
 
-    // The provider retries internally; real timers keep this honest but brief.
     const res = await submit(buildWav());
+
     expect(res.status).toBe(503);
-  }, 15_000);
+    expect(((await res.json()) as { code: string }).code).toBe('throttled');
+    expect(spy).toHaveBeenCalledTimes(4);
+  });
+
+  it('rejects an oversized upload with 413 before scoring', async () => {
+    const spy = stubAzure(fixture);
+
+    const res = await submit(new ArrayBuffer(2 * 1024 * 1024 + 1));
+
+    expect(res.status).toBe(413);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 when Azure is not configured, and never calls it', async () => {
+    // A missing secret is `undefined` at runtime, and a bare regex test accepts it:
+    // `/^[a-z0-9-]+$/.test(undefined)` is true. Without an explicit check this would call
+    // `undefined.stt.speech.microsoft.com` and report the DNS failure as an upstream fault.
+    const spy = stubAzure(fixture);
+
+    for (const missing of ['AZURE_SPEECH_REGION', 'AZURE_SPEECH_KEY'] as const) {
+      const res = await app.request(
+        '/api/attempts?drillId=test-drill',
+        { method: 'POST', body: buildWav() },
+        { ...env, [missing]: undefined },
+      );
+      expect(res.status, missing).toBe(503);
+    }
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('gives the client a fixed message, not the upstream error text', async () => {
+    // The provider's message carries the vendor, upstream status and part of the upstream
+    // body. That belongs in the server log, not in the browser.
+    stubAzure('Access denied due to invalid subscription key or wrong API endpoint.', {
+      status: 401,
+    });
+
+    const res = await submit(buildWav());
+    const body = (await res.json()) as { error: string; code: string };
+
+    expect(res.status).toBe(502);
+    expect(body.code).toBe('unauthorised');
+    expect(body.error).not.toMatch(/azure|401|subscription|endpoint/i);
+  });
 
   it('does not persist an attempt when scoring fails', async () => {
     stubAzure({ RecognitionStatus: 'NoMatch' });
@@ -136,16 +194,59 @@ describe('POST /api/attempts', () => {
 
 describe('GET /api/attempts', () => {
   it('lists attempts newest first', async () => {
-    stubAzure(fixture);
-    await submit(buildWav());
-    await submit(buildWav());
+    // Fixed, distinct timestamps. Two real submissions can land in the same millisecond,
+    // and then an ordering assertion passes whatever the order.
+    await insertAttempt('older', '2026-01-01T00:00:00.000Z');
+    await insertAttempt('newest', '2026-03-01T00:00:00.000Z');
+    await insertAttempt('middle', '2026-02-01T00:00:00.000Z');
 
     const res = await app.request('/api/attempts', {}, env);
     const body = (await res.json()) as { attempts: Attempt[] };
 
-    expect(body.attempts).toHaveLength(2);
-    const timestamps = body.attempts.map((a) => a.createdAt);
-    expect(timestamps).toEqual([...timestamps].sort().reverse());
+    expect(body.attempts.map((a) => a.id)).toEqual(['newest', 'middle', 'older']);
+  });
+
+  it('breaks timestamp ties by id so the order is stable', async () => {
+    await insertAttempt('a', '2026-01-01T00:00:00.000Z');
+    await insertAttempt('b', '2026-01-01T00:00:00.000Z');
+
+    const res = await app.request('/api/attempts', {}, env);
+    const body = (await res.json()) as { attempts: Attempt[] };
+
+    expect(body.attempts.map((a) => a.id)).toEqual(['b', 'a']);
+  });
+
+  it('bounds the list, defaulting to 50 and honouring ?limit', async () => {
+    for (let i = 0; i < 55; i++) {
+      await insertAttempt(`a${i}`, new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString());
+    }
+
+    const all = (await (await app.request('/api/attempts', {}, env)).json()) as {
+      attempts: Attempt[];
+    };
+    const three = (await (await app.request('/api/attempts?limit=3', {}, env)).json()) as {
+      attempts: Attempt[];
+    };
+
+    expect(all.attempts).toHaveLength(50);
+    expect(three.attempts).toHaveLength(3);
+  });
+
+  it('rejects an out-of-range limit', async () => {
+    for (const bad of ['0', '201', 'abc', '2.5']) {
+      expect((await app.request(`/api/attempts?limit=${bad}`, {}, env)).status, bad).toBe(400);
+    }
+  });
+
+  it('survives an unreadable stored row rather than failing the whole list', async () => {
+    await insertAttempt('good', '2026-01-02T00:00:00.000Z');
+    await insertAttempt('bad', '2026-01-01T00:00:00.000Z', '{not json');
+
+    const res = await app.request('/api/attempts', {}, env);
+    const body = (await res.json()) as { attempts: Attempt[] };
+
+    expect(res.status).toBe(200);
+    expect(body.attempts.find((a) => a.id === 'bad')?.wordScores).toEqual([]);
   });
 
   it('filters by drill', async () => {

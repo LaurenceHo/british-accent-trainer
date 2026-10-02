@@ -8,6 +8,7 @@
  * Returns clarity only. The provider cannot discriminate accent — see `spike/FINDINGS.md`.
  */
 
+import { isValidRegion, type AzureConfig } from '../azure-config';
 import {
   ScoringError,
   type ClarityAssessment,
@@ -39,15 +40,6 @@ const REQUEST_TIMEOUT_MS = 15_000;
 
 /** Upstream error bodies are echoed into messages; cap them so logs stay readable. */
 const MAX_ERROR_BODY_CHARS = 200;
-
-/**
- * Azure regions are lowercase alphanumeric.
- *
- * Validated because the region is interpolated into the request **hostname**, and the
- * request carries the subscription key. A malformed value such as `evil.com/` would
- * otherwise send the key to another host.
- */
-const VALID_REGION = /^[a-z0-9-]+$/;
 
 /** Response shape of the REST endpoint. Scores sit flat on each object, not nested. */
 interface AzurePhoneme {
@@ -149,12 +141,6 @@ export function toClarityAssessment(res: AzureResponse): ClarityAssessment {
   };
 }
 
-/** Credentials and region for the Azure Speech resource. */
-export interface AzureConfig {
-  readonly key: string;
-  readonly region: string;
-}
-
 /** Scores a recording against its reference text via the Azure REST assessment endpoint. */
 export class AzureScoringProvider implements ScoringProvider {
   readonly name = 'azure';
@@ -164,7 +150,10 @@ export class AzureScoringProvider implements ScoringProvider {
   readonly #config: AzureConfig;
 
   constructor(config: AzureConfig) {
-    if (!VALID_REGION.test(config.region)) {
+    // The region is interpolated into the hostname that receives the key, so a value such
+    // as `evil.com/` would send it elsewhere. isValidRegion checks the type first: a bare
+    // regex test would accept `undefined`, coercing it to the string "undefined".
+    if (!isValidRegion(config.region)) {
       throw new ScoringError('upstream', `Invalid Azure region: ${config.region}`);
     }
     this.#config = config;
