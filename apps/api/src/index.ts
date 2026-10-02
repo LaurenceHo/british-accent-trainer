@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import attempts from './routes/attempts';
 import drills from './routes/drills';
+import referenceAudio from './routes/reference-audio';
 import spike from './spike/assess';
 import type { Env, HealthResponse } from './types';
 
@@ -18,6 +19,7 @@ app.get('/health', (c) => {
 });
 
 app.route('/api/drills', drills);
+app.route('/api/drills', referenceAudio);
 app.route('/api/attempts', attempts);
 
 // THROWAWAY — Task 1 engine spike. Remove this mount and `src/spike/` once the

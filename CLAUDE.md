@@ -215,6 +215,22 @@ git push -u origin feat/<task>   # then the owner opens a PR and squash-merges
 Never use `--no-ff`. If `git merge` refuses with "not possible to fast-forward", rebase the
 branch first — do not reach for `--no-ff` to force it through.
 
+**Stacked PRs.** Work does not wait for merges: each task branches from the previous task's
+branch, and its PR targets that branch. When the parent is squash-merged it lands as one
+*new* commit, so the child still carries the parent's original commits and a plain
+`git rebase master` conflicts. Replay only the child's own commits instead:
+
+```bash
+git fetch origin --prune
+git rebase --onto origin/master <old-parent-tip> feat/child
+git push --force-with-lease
+gh pr edit <n> --base master          # if GitHub has not retargeted it already
+```
+
+`<old-parent-tip>` is the last commit of the parent branch as it was before the merge.
+Use a separate `git worktree` for the next task while review agents work on the current
+one, so switching branches never moves files out from under them.
+
 **Every task ends with a review pass.** Once the work is committed and green, run both:
 
 1. **Simplify** — reduce complexity without changing behaviour.
