@@ -4,6 +4,7 @@ import app from '../src/index';
 import type { Attempt } from '../src/domain';
 import fixture from './fixtures/azure-assessment.json';
 import { buildWav } from './build-wav';
+import { seedDrill, stubAzure } from './route-helpers';
 
 /**
  * End-to-end tests for recording submission: validation, scoring, persistence.
@@ -11,24 +12,6 @@ import { buildWav } from './build-wav';
  * `fetch` is stubbed so the whole route runs — validation, the provider, D1 — without
  * calling the live Azure API.
  */
-
-function stubAzure(body: unknown, init: ResponseInit = { status: 200 }) {
-  const spy = vi.fn(async (_input: unknown, _init?: unknown) =>
-    new Response(typeof body === 'string' ? body : JSON.stringify(body), init),
-  );
-  vi.stubGlobal('fetch', spy);
-  return spy;
-}
-
-async function seedDrill(id = 'test-drill', sentence = 'Pass me a glass of water') {
-  await env.DB.prepare(
-    `INSERT OR REPLACE INTO drills
-     (id, sentence, target_ipa, feature, difficulty, coaching_note, has_r_context, sort_order)
-     VALUES (?, ?, 'x', 'BATH', 4, 'note', 0, 1)`,
-  )
-    .bind(id, sentence)
-    .run();
-}
 
 async function countAttempts(): Promise<number | undefined> {
   const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM attempts').first<{ n: number }>();

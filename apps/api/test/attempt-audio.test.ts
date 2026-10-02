@@ -4,6 +4,7 @@ import app from '../src/index';
 import type { Attempt } from '../src/domain';
 import { buildWav } from './build-wav';
 import fixture from './fixtures/azure-assessment.json';
+import { seedDrill, stubAzure } from './route-helpers';
 
 /**
  * Attempt audio: stored on successful submission, replayable afterwards.
@@ -12,43 +13,38 @@ import fixture from './fixtures/azure-assessment.json';
  * that come back are exactly the bytes that went in.
  */
 
-function stubAzure(body: unknown, init: ResponseInit = { status: 200 }) {
-  const spy = vi.fn(
-    async (_input: unknown, _init?: unknown) =>
-      new Response(typeof body === 'string' ? body : JSON.stringify(body), init),
-  );
-  vi.stubGlobal('fetch', spy);
-  return spy;
-}
-
-async function clearAudio() {
+async function storedAudioKeys(): Promise<string[]> {
   const listed = await env.AUDIO.list({ prefix: 'attempts/' });
-  await Promise.all(listed.objects.map((o) => env.AUDIO.delete(o.key)));
+  return listed.objects.map((o) => o.key);
 }
 
 function submit(body: ArrayBuffer, bindings: Env = env) {
-  return app.request('/api/attempts?drillId=d1', { method: 'POST', body }, bindings);
+  return app.request('/api/attempts?drillId=test-drill', { method: 'POST', body }, bindings);
+}
+
+/** Submits a recording that scores successfully and returns the saved attempt. */
+async function submitScored(wav: ArrayBuffer = buildWav()): Promise<Attempt> {
+  stubAzure(fixture);
+  const { attempt } = (await (await submit(wav)).json()) as { attempt: Attempt };
+  return attempt;
+}
+
+function getAudio(attemptId: string) {
+  return app.request(`/api/attempts/${attemptId}/audio`, {}, env);
 }
 
 beforeEach(async () => {
   await env.DB.prepare('DELETE FROM attempts').run();
   await env.DB.prepare('DELETE FROM drills').run();
-  await env.DB.prepare(
-    `INSERT INTO drills
-     (id, sentence, target_ipa, feature, difficulty, coaching_note, has_r_context, sort_order)
-     VALUES ('d1', 'Pass me a glass of water', 'x', 'BATH', 4, 'note', 0, 1)`,
-  ).run();
-  await clearAudio();
+  await seedDrill();
+  await Promise.all((await storedAudioKeys()).map((key) => env.AUDIO.delete(key)));
 });
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('storing attempt audio', () => {
   it('stores the recording and records its key on the attempt', async () => {
-    stubAzure(fixture);
-
-    const res = await submit(buildWav());
-    const { attempt } = (await res.json()) as { attempt: Attempt };
+    const attempt = await submitScored();
 
     expect(attempt.audioKey).toBe(`attempts/${attempt.id}.wav`);
     expect(await env.AUDIO.head(attempt.audioKey ?? '')).not.toBeNull();
@@ -60,7 +56,7 @@ describe('storing attempt audio', () => {
 
     await submit(buildWav());
 
-    expect((await env.AUDIO.list({ prefix: 'attempts/' })).objects).toHaveLength(0);
+    expect(await storedAudioKeys()).toHaveLength(0);
   });
 
   it('stores nothing for invalid audio', async () => {
@@ -68,7 +64,7 @@ describe('storing attempt audio', () => {
 
     await submit(new ArrayBuffer(100));
 
-    expect((await env.AUDIO.list({ prefix: 'attempts/' })).objects).toHaveLength(0);
+    expect(await storedAudioKeys()).toHaveLength(0);
   });
 
   it('still saves the attempt when the audio write fails', async () => {
@@ -96,12 +92,11 @@ describe('storing attempt audio', () => {
 
 describe('GET /api/attempts/:id/audio', () => {
   it('returns exactly the bytes that were submitted', async () => {
-    stubAzure(fixture);
     const wav = buildWav({ dataBytes: 3_200 });
     new Uint8Array(wav).fill(7, 44);
 
-    const { attempt } = (await (await submit(wav)).json()) as { attempt: Attempt };
-    const res = await app.request(`/api/attempts/${attempt.id}/audio`, {}, env);
+    const attempt = await submitScored(wav);
+    const res = await getAudio(attempt.id);
 
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('audio/wav');
@@ -110,10 +105,9 @@ describe('GET /api/attempts/:id/audio', () => {
 
   it('marks the audio private and immutable', async () => {
     // Private: it is the user's own voice. Immutable: the key is a fresh UUID per attempt.
-    stubAzure(fixture);
-    const { attempt } = (await (await submit(buildWav())).json()) as { attempt: Attempt };
+    const attempt = await submitScored();
 
-    const res = await app.request(`/api/attempts/${attempt.id}/audio`, {}, env);
+    const res = await getAudio(attempt.id);
     await res.arrayBuffer();
 
     expect(res.headers.get('Cache-Control')).toContain('private');
@@ -121,23 +115,22 @@ describe('GET /api/attempts/:id/audio', () => {
   });
 
   it('returns 404 for an unknown attempt', async () => {
-    expect((await app.request('/api/attempts/nope/audio', {}, env)).status).toBe(404);
+    expect((await getAudio('nope')).status).toBe(404);
   });
 
   it('returns 404 when the attempt has no stored audio', async () => {
     await env.DB.prepare(
       `INSERT INTO attempts (id, drill_id, created_at, word_scores, feature_verdicts)
-       VALUES ('no-audio', 'd1', '2026-01-01T00:00:00.000Z', '[]', '[]')`,
+       VALUES ('no-audio', 'test-drill', '2026-01-01T00:00:00.000Z', '[]', '[]')`,
     ).run();
 
-    expect((await app.request('/api/attempts/no-audio/audio', {}, env)).status).toBe(404);
+    expect((await getAudio('no-audio')).status).toBe(404);
   });
 
   it('returns 404 when the stored object has gone', async () => {
-    stubAzure(fixture);
-    const { attempt } = (await (await submit(buildWav())).json()) as { attempt: Attempt };
+    const attempt = await submitScored();
     await env.AUDIO.delete(attempt.audioKey ?? '');
 
-    expect((await app.request(`/api/attempts/${attempt.id}/audio`, {}, env)).status).toBe(404);
+    expect((await getAudio(attempt.id)).status).toBe(404);
   });
 });
