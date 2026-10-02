@@ -75,6 +75,17 @@ async function synthesise(env: Env, text: string, voice: string): Promise<ArrayB
   return res.arrayBuffer();
 }
 
+/**
+ * Base64-encodes as UTF-8. `btoa` works on Latin-1 code units, so it silently mis-encodes
+ * anything above U+007F and throws above U+00FF; Azure expects base64 of UTF-8 bytes.
+ */
+function base64Utf8(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
 /** Submits WAV audio for `en-GB` pronunciation assessment against `referenceText`. */
 async function assess(
   env: Env,
@@ -100,7 +111,7 @@ async function assess(
       headers: {
         'Ocp-Apim-Subscription-Key': env.AZURE_SPEECH_KEY,
         'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000',
-        'Pronunciation-Assessment': btoa(JSON.stringify(config)),
+        'Pronunciation-Assessment': base64Utf8(JSON.stringify(config)),
         Accept: 'application/json',
       },
       body: wav,

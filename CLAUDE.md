@@ -201,16 +201,27 @@ only. This repository is intended to be public.
 
 **`master` keeps a linear history — no merge commits.** The repo is configured with
 `merge.ff = only` and `pull.rebase = true`, so a merge that would create a merge commit
-fails rather than silently branching the graph. To land a feature branch:
+fails rather than silently branching the graph.
+
+**One branch per task, landed by squash-merged PR.** The repository owner opens and merges
+the PR; do not merge to `master` directly and do not push to `master`.
 
 ```bash
-git checkout feat/x && git rebase master   # replay onto the tip
-git checkout master && git merge feat/x    # fast-forwards; --ff-only is the default here
-git branch -d feat/x
+git checkout -b feat/<task>      # before starting work
+# ... implement, with tests passing at each commit
+git push -u origin feat/<task>   # then the owner opens a PR and squash-merges
 ```
 
 Never use `--no-ff`. If `git merge` refuses with "not possible to fast-forward", rebase the
 branch first — do not reach for `--no-ff` to force it through.
+
+**Every task ends with a review pass.** Once the work is committed and green, run both:
+
+1. **Simplify** — reduce complexity without changing behaviour.
+2. **Review** — correctness, readability, architecture, security, performance.
+
+Act on the findings, or state plainly why a finding is being left. A task is not finished
+until that pass has happened.
 
 **CI** (`.github/workflows/ci.yml`) runs `bun run lint`, `bun run build` and `bun run test`
 on every pull request and on pushes to `master`. Run all three locally before pushing —
