@@ -5,6 +5,7 @@ import {
   REFERENCE_VOICES,
   SpeechSynthesisError,
   synthesiseSpeech,
+  type ReferenceVoice,
 } from '../tts/azure';
 import { readAzureConfig } from '../azure-config';
 import type { Env } from '../types';
@@ -21,17 +22,14 @@ import { findDrill } from './drills';
 /** Hex SHA-256 prefix. Long enough to make collisions irrelevant at corpus scale. */
 async function shortHash(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)]
-    .slice(0, 8)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+  return Array.from(new Uint8Array(digest, 0, 8), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** The R2 key for a drill's reference audio in a given voice. */
 export async function referenceAudioKey(
   drillId: string,
   sentence: string,
-  voice: string,
+  voice: ReferenceVoice,
 ): Promise<string> {
   return `reference/${voice}/${drillId}-${await shortHash(sentence)}.wav`;
 }
@@ -75,11 +73,7 @@ referenceAudio.get('/:id/reference-audio', async (c) => {
 
   let audio: ArrayBuffer;
   try {
-    audio = await synthesiseSpeech(
-      config,
-      drill.sentence,
-      voice,
-    );
+    audio = await synthesiseSpeech(config, drill.sentence, voice);
   } catch (error) {
     if (error instanceof SpeechSynthesisError) {
       return c.json({ error: 'Reference audio is temporarily unavailable' }, 502);
