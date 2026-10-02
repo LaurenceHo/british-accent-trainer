@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:migrate": "wrangler d1 migrations apply accent-improver --local",
+    "db:migrate": "wrangler d1 migrations apply accent-trainer --local",
+    "db:seed": "bun run ../../scripts/seed.ts > .seed.sql && wrangler d1 execute accent-trainer --local --file=.seed.sql && rm .seed.sql",
     "deploy": "wrangler deploy"
   },
   "dependencies": {

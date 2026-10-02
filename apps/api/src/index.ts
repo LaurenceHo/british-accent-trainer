@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import drills from './routes/drills';
 import spike from './spike/assess';
 import type { Env, HealthResponse } from './types';
 
@@ -14,6 +15,8 @@ app.get('/health', (c) => {
   const body: HealthResponse = { status: 'ok' };
   return c.json(body);
 });
+
+app.route('/api/drills', drills);
 
 // THROWAWAY — Task 1 engine spike. Remove this mount and `src/spike/` once the
 // Engine Decision Gate is resolved. It calls the live Azure API and is not shipped.

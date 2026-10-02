@@ -65,7 +65,7 @@ async function synthesise(env: Env, text: string, voice: string): Promise<ArrayB
         'Ocp-Apim-Subscription-Key': env.AZURE_SPEECH_KEY,
         'Content-Type': 'application/ssml+xml',
         'X-Microsoft-OutputFormat': 'riff-16khz-16bit-mono-pcm',
-        'User-Agent': 'accent-improver-spike',
+        'User-Agent': 'accent-trainer-spike',
       },
       body: ssml,
     },

@@ -1,8 +1,8 @@
-# Implementation Plan: British Accent Improver
+# Implementation Plan: British Accent Trainer
 
-> **Gated workflow:** [SPECIFY](../specs/2026-09-13-british-accent-improver-design.md) → PLAN (this file) → [TASKS](../todo.md) → implement.
+> **Gated workflow:** [SPECIFY](../specs/2026-09-13-british-accent-trainer-design.md) → PLAN (this file) → [TASKS](../todo.md) → implement.
 > This document owns **how** the work is sequenced and **what could go wrong**.
-> What we are building, the stack, and the engine constraints live in [the spec](../specs/2026-09-13-british-accent-improver-design.md);
+> What we are building, the stack, and the engine constraints live in [the spec](../specs/2026-09-13-british-accent-trainer-design.md);
 > individual task detail lives in [the task list](../todo.md). Do not duplicate them here.
 
 ---
@@ -85,7 +85,7 @@ Task 0  Repo, scaffold, test harness, Azure key
 - [x] Task 1: **Scoring engine spike — the non-rhotic test** ✅ — **Azure failed the gate**
 
 **Checkpoint: Engine Decision Gate** — ⚠ **RESOLVED: Azure `en-GB` rejected for RP scoring.** Determines which rung of the
-[feedback ladder](../specs/2026-09-13-british-accent-improver-design.md#feedback-ladder) the product lands on, and therefore the scope of
+[feedback ladder](../specs/2026-09-13-british-accent-trainer-design.md#feedback-ladder) the product lands on, and therefore the scope of
 Task 8. Do not begin Phase 1 until resolved with a human.
 
 ### Phase 1: First Vertical Slice — record one drill and get a score
@@ -112,7 +112,7 @@ Task 8. Do not begin Phase 1 until resolved with a human.
 - [ ] Task 11: Progress history and trends
 - [ ] Task 12: PWA, accessibility, and cross-browser hardening
 
-**Checkpoint: Complete** — all [success criteria](../specs/2026-09-13-british-accent-improver-design.md#success-criteria) met.
+**Checkpoint: Complete** — all [success criteria](../specs/2026-09-13-british-accent-trainer-design.md#success-criteria) met.
 
 > Full checkpoint criteria are in [the task list](../todo.md) alongside the tasks they gate.
 

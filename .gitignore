@@ -26,3 +26,4 @@ docs/todo.md
 Thumbs.db
 .idea/
 *.log
+.seed.sql

@@ -1,7 +1,7 @@
-# Spec: British Accent Improver
+# Spec: British Accent Trainer
 
-> **Gated workflow:** SPECIFY (this file) → [PLAN](../plans/2026-09-13-british-accent-improver.md) → [TASKS](../todo.md) → implement.
-> This document owns **what** we are building and **why**. [the plan](../plans/2026-09-13-british-accent-improver.md) owns
+> **Gated workflow:** SPECIFY (this file) → [PLAN](../plans/2026-09-13-british-accent-trainer.md) → [TASKS](../todo.md) → implement.
+> This document owns **what** we are building and **why**. [the plan](../plans/2026-09-13-british-accent-trainer.md) owns
 > sequencing and risk. [the task list](../todo.md) owns individual tasks. Each fact lives in
 > exactly one of the three — if you need to change one, change it at its source.
 
