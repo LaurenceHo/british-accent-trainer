@@ -7,6 +7,21 @@
 
 ---
 
+> ## ⚠ Gate outcome — 2026-09-14
+>
+> **Task 1 ran and Azure `en-GB` failed it.** The critical risk in the table below
+> materialised: the engine does not discriminate RP. Real recordings of *car* scored 64
+> non-rhotic vs 65 rhotic; connected speech scores British and American readings
+> identically on every phoneme.
+>
+> Phases 1–3 remain valid — they are vendor-agnostic by design, which is exactly why the
+> `ScoringProvider` interface was introduced. What changed is **Task 8's scope**: the
+> feedback UI cannot be driven by an `en-GB` score.
+>
+> One partial rescue is under evaluation: per-feature detection via an inverted `en-US`
+> assessment (Rung 5 in the spec). Validated for *car*, failed for *water*, synthetic audio
+> only. Full evidence: `spike/FINDINGS.md`.
+
 ## Strategy
 
 Almost everything in this project is conventional work: a small CRUD REST API, a record
@@ -66,10 +81,10 @@ Task 0  Repo, scaffold, test harness, Azure key
 
 ### Phase 0: Foundation and De-risking
 
-- [ ] Task 0: Repository, scaffold, and branch
-- [ ] Task 1: **Scoring engine spike — the non-rhotic test** *(highest risk, run first)*
+- [x] Task 0: Repository, scaffold, and branch ✅
+- [x] Task 1: **Scoring engine spike — the non-rhotic test** ✅ — **Azure failed the gate**
 
-**Checkpoint: Engine Decision Gate** — blocking. Determines which rung of the
+**Checkpoint: Engine Decision Gate** — ⚠ **RESOLVED: Azure `en-GB` rejected for RP scoring.** Determines which rung of the
 [feedback ladder](../specs/2026-09-13-british-accent-improver-design.md#feedback-ladder) the product lands on, and therefore the scope of
 Task 8. Do not begin Phase 1 until resolved with a human.
 
@@ -107,10 +122,10 @@ Task 8. Do not begin Phase 1 until resolved with a human.
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| **Azure scores correct RP non-rhotic /r/ as an error** | **Critical** — would make the engine unfit for the app's core purpose | Task 1 tests exactly this, A/B against a rhotic control, before any UI is built |
-| Azure `en-GB` phone count does not match a British lexicon | High — kills rung 2 index alignment | Task 1 measures parity; product falls back to rung 3 (time alignment) |
-| Per-phoneme `Offset`/`Duration` absent at `en-GB` | High — would kill rung 3 as well, collapsing Task 8 to rung 4 | Explicitly confirmed in Task 1 rather than assumed |
-| Vendor swap needed (Azure → Speechace) | Medium | `ScoringProvider` interface in Task 4 confines the change to one adapter |
+| ~~Azure scores correct RP non-rhotic /r/ as an error~~ | **MATERIALISED** | Confirmed 2026-09-14. Worse than predicted: it does not discriminate the feature at all. Mitigated by the provider interface; see gate outcome above |
+| ~~Azure `en-GB` phone count does not match a British lexicon~~ | **MATERIALISED** | Confirmed: *car* = 3 phones vs 2 in RP. Rung 2 is dead |
+| ~~Per-phoneme `Offset`/`Duration` absent at `en-GB`~~ | **Did not occur** | Timings are present and non-zero — though the scores they carry do not track RP |
+| Vendor swap needed (Azure → alternative) | **Now likely** | `ScoringProvider` interface confines the change to one adapter. Evaluate candidates against the six probes in `spike/FINDINGS.md` before committing |
 | Safari `MediaRecorder` format differences | Medium — CLAUDE.md requires Safari support | Acceptance criterion in Task 3; decode via `AudioContext` rather than trusting the container |
 | Azure REST 30-second audio cap | Low | Enforced as request validation in Task 5 |
 | Live API calls inside the test suite (cost, flakiness) | Medium | Checked-in WAV fixture + captured response JSON; mock at the HTTP boundary |

@@ -49,14 +49,41 @@ Miniflare simulation — no remote resources are provisioned.
 
 ## Critical domain constraint
 
-**Azure returns phoneme *names* for `en-US` only. At `en-GB` you get phoneme *scores* with
-`Offset`/`Duration`, but the `Phoneme` field is an empty string.** Syllable groups, prosody,
-and `NBestPhonemes` are likewise `en-US`-only.
+Measured in `spike/FINDINGS.md`, with both synthetic and real speech. Read that before
+touching scoring.
 
-Consequences, and they are not negotiable:
+**1. Azure `en-GB` does not discriminate RP.** It returns phoneme *scores* with
+`Offset`/`Duration`, but the `Phoneme` name is `""`. Syllable groups, prosody, and
+`NBestPhonemes` are `en-US`-only. Worse, the scores do not track the target accent:
 
-- **Never switch the locale to `en-US`** to obtain phoneme names. That scores the user
-  against General American and inverts the purpose of the app.
+- Real recordings of *car* scored **64 non-rhotic vs 65 rhotic**; *water* **65 vs 67**.
+  A deliberately rolled American r is indistinguishable from no r at all.
+- In connected speech, British and American readings score **identically on every
+  phoneme** — `glass` (/ɡlɑːs/ vs /ɡlæs/) scores 100 both ways.
+- `car` returns **3 phonemes** where RP has 2, confirming an en-US phone inventory.
+
+**Do not use an `en-GB` score as a measure of RP-ness, and never label it as one in the
+UI.** It measures general intelligibility, which is a different question.
+
+**2. Index-aligning scores to a British lexicon is impossible.** Azure's phone counts
+follow the American inventory, so the arrays do not correspond. Use time alignment
+(`Offset`/`Duration`) or word-level scores instead.
+
+**3. The `en-US` rule, precisely.** Never **score** the user against `en-US` — that grades
+them for sounding American and inverts the app's purpose.
+
+> **Permitted exception:** using `en-US` as a **feature detector** with an inverted
+> verdict. At `en-US` the API returns phoneme names and `NBestPhonemes` (the phones it
+> actually heard). For *car* it expects `ɑɹ`; a correct RP speaker is reported as producing
+> bare `ɑ` — so **hearing the non-rhotic variant means the user got RP right.** See
+> `src/spike/rhotic-detector.ts`. No American score is ever shown to the user.
+>
+> Known limit: this works on wide contrasts (`ɑ` vs `ɑɹ` in *car*) and fails on narrow ones
+> (`ə` vs `ɚ` in *water*, where both are heard as `ɚ`). Treat a non-detection as
+> **unknown**, never as "rhotic".
+
+**4. Other standing rules:**
+
 - IPA symbols must come from the local British lexicon, never from the API response.
 - **Never render a phoneme symbol the engine did not actually score.** If lexicon/score
   alignment lengths disagree, fall back to time-based highlighting.
@@ -73,6 +100,12 @@ Consequences, and they are not negotiable:
 - **Do not use `microsoft-cognitiveservices-speech-sdk`.** It needs Node APIs and
   long-lived WebSockets and is not Workers-safe. Call the REST endpoint with `fetch()`,
   passing config as a base64 `Pronunciation-Assessment` header.
+- **The REST response shape is not the SDK-documented one.** Scores sit *flat* on each
+  object — `NBest[0].AccuracyScore`, `Words[i].AccuracyScore` — not nested under a
+  `PronunciationAssessment` property. See `src/spike/azure-types.ts`.
+- **Renaming the project directory breaks `node_modules`.** Bun symlinks use absolute
+  paths, so a rename leaves every link dangling and `bunx` silently tries to reinstall.
+  Fix: `rm -rf node_modules apps/api/node_modules apps/api/.wrangler && bun install`.
 - **30-second audio cap** on the REST assessment path. Enforce as request validation.
 - **Audio must be 16 kHz / 16-bit / mono PCM WAV.** Browsers emit WebM/Opus, so decode via
   `AudioContext` and re-encode client-side. Decode rather than trusting the container —

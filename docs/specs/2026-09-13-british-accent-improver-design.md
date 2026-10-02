@@ -103,14 +103,39 @@ What the app promises the user, in descending order of richness. Because engine 
 unproven until the Engine Decision Gate, the product is specified to land on **whichever
 rung survives** — this is a deliberate scope decision, not a hedge.
 
+> **Resolved by the Engine Decision Gate on 2026-09-14.** Statuses below are measured, not
+> projected. Evidence: `spike/FINDINGS.md`.
+
 | Rung | Feedback capability | Status |
 | --- | --- | --- |
-| 1 | Phoneme names + scores straight from the engine | **Unavailable at `en-GB`** — confirmed above. |
-| 2 | Phoneme scores aligned **by index** to a local British IPA sequence | Viable **only if** the gate shows phone-count parity *and* correct RP scores well. |
-| 3 | Phoneme scores aligned **by time** (`Offset`/`Duration`) over the waveform — "this part of the word was wrong", no symbols needed | Robust fallback. Pairs naturally with waveform rendering. |
-| 4 | Word-level scores only, with target IPA shown from the lexicon as reference (not as per-phoneme scoring) | Always available. |
+| 1 | Phoneme names + scores straight from the engine | **Dead.** Names are `""` at `en-GB`. |
+| 2 | Phoneme scores aligned **by index** to a local British IPA sequence | **Dead.** Azure segments *car* into 3 phones against an en-US inventory; RP has 2. The arrays cannot correspond. |
+| 3 | Phoneme scores aligned **by time** (`Offset`/`Duration`) over the waveform | **Mechanically alive, semantically empty.** Timings are present, but the scores they would colour do not track RP — identical for British and American readings. |
+| 4 | Word-level scores + target IPA shown from the lexicon as reference | **Alive**, and the only honest option on Azure — provided the UI never implies the score measures RP-ness. |
 
-**Rung 3 is a stronger fallback than it appears** and is not a consolation prize.
+**The blocker is not feedback granularity — the underlying scores do not measure the target
+accent.** Rungs 3 and 4 are presentation choices over a signal that is blind to RP.
+
+### Rung 5 — per-feature detection (new, partially validated)
+
+Not in the original ladder. Instead of scoring *how British* an utterance is, **detect
+specific features individually** and report each as a categorical result.
+
+Mechanism: assess at `en-US` (which returns phoneme names and `NBestPhonemes`) and invert
+the verdict — for *car*, Azure expecting `ɑɹ` but hearing bare `ɑ` means the speaker
+correctly dropped the r. See `apps/api/src/spike/rhotic-detector.ts`.
+
+| Probe | Expected | Heard | Verdict |
+| --- | --- | --- | --- |
+| *car*, non-rhotic | `ɑɹ` | `ɑ` | r dropped → correct RP ✅ |
+| *car*, rhotic | `ɑɹ` | `ɑɹ` | r produced ✅ |
+| *water*, non-rhotic | `ɚ` | `ɚ` | **false negative** ❌ |
+
+**Status: promising, unproven.** Works on wide contrasts, fails on narrow ones, and is so
+far only tested on synthetic audio. A detector that says *"you pronounced the r in car — RP
+drops it"* teaches more than *"your pronunciation scored 64"*, so this is the most
+promising direction — but only features that demonstrably discriminate may ship, and a
+non-detection must be reported as **unknown**, never as a negative result.
 
 ---
 
@@ -287,11 +312,15 @@ The standing bar every task clears, on top of its own acceptance criteria:
 
 **Never:**
 - Commit the Azure key, or any secret — it belongs in `.dev.vars` (gitignored) and Worker secrets
-- Switch the locale to `en-US` to obtain phoneme names — that scores the user against
-  General American and inverts the entire purpose of the app
+- **Score** the user against `en-US` — that grades them for sounding American and inverts
+  the entire purpose of the app. *(Permitted exception: using `en-US` as a feature detector
+  with an inverted verdict, where no American score reaches the user. See Rung 5.)*
+- Present an `en-GB` score as a measure of RP-ness — measured, it is not one
 - Use CMUdict as the primary lexicon — it is American and rhotic, encoding the very
   pronunciations this app trains against
 - Render a phoneme symbol the engine did not actually score
+- Report a feature as wrong when the detector simply could not tell — non-detection is
+  **unknown**, not a negative
 - Use Python
 - Add AI attribution to a commit — no co-author trailer, no tool name
 

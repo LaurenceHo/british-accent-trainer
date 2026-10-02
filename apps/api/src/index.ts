@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import spike from './spike/assess';
 import type { Env, HealthResponse } from './types';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -13,5 +14,9 @@ app.get('/health', (c) => {
   const body: HealthResponse = { status: 'ok' };
   return c.json(body);
 });
+
+// THROWAWAY — Task 1 engine spike. Remove this mount and `src/spike/` once the
+// Engine Decision Gate is resolved. It calls the live Azure API and is not shipped.
+app.route('/spike', spike);
 
 export default app;
