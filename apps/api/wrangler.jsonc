@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "accent-improver-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": {
+    "enabled": true
+  },
+
+  // D1 holds drills and attempts. `database_id` is a placeholder: every task
+  // through Task 11 runs against local Miniflare simulation, so no remote
+  // database is provisioned yet. Replace before the first `wrangler deploy`.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "accent-improver",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+
+  // R2 stores reference TTS audio (Task 7) and submitted attempt audio (Task 10).
+  "r2_buckets": [
+    {
+      "binding": "AUDIO",
+      "bucket_name": "accent-improver-audio"
+    }
+  ]
+
+  // AZURE_SPEECH_KEY and AZURE_SPEECH_REGION are NOT declared here.
+  // Local: apps/api/.dev.vars (gitignored). Deployed: `wrangler secret put`.
+}

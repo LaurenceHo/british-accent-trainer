@@ -1,0 +1,8 @@
+# Copy to `.dev.vars` (gitignored) and fill in real values.
+#
+# Requires a dedicated Azure Speech resource (kind: SpeechServices), F0 tier is sufficient.
+# The region must match the resource — it forms part of the endpoint host:
+#   https://<region>.stt.speech.microsoft.com/...
+#   https://<region>.tts.speech.microsoft.com/...
+AZURE_SPEECH_KEY="your-azure-speech-key"
+AZURE_SPEECH_REGION="uksouth"
