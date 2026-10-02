@@ -109,6 +109,33 @@ function toWordScores(assessment: ClarityAssessment): WordScore[] {
   }));
 }
 
+/**
+ * Stores the submitted recording so it can be replayed against the reference later.
+ *
+ * Runs after scoring succeeds, so a rejected or unrecognised recording never occupies
+ * storage. A storage failure does not fail the request: the score has already been paid
+ * for, and the learner still has the recording in their browser for this session. The
+ * attempt is saved with no audio and the failure is logged.
+ *
+ * The key is derived from the server-generated attempt id, never from client input.
+ *
+ * @returns The R2 key, or `null` when the write failed.
+ */
+async function storeAttemptAudio(
+  bucket: R2Bucket,
+  attemptId: string,
+  audio: ArrayBuffer,
+): Promise<string | null> {
+  const key = `attempts/${attemptId}.wav`;
+  try {
+    await bucket.put(key, audio, { httpMetadata: { contentType: 'audio/wav' } });
+    return key;
+  } catch (error) {
+    console.error(`attempt ${attemptId}: audio not stored`, error);
+    return null;
+  }
+}
+
 /** Maps a scoring failure onto an HTTP status the client can act on. */
 function statusFor(error: ScoringError): 400 | 502 | 503 {
   if (error.code === 'not-recognised') return 400;
@@ -175,8 +202,11 @@ attempts.post(
       throw error;
     }
 
+    const id = crypto.randomUUID();
+    const audioKey = await storeAttemptAudio(c.env.AUDIO, id, audio);
+
     const attempt: Attempt = {
-      id: crypto.randomUUID(),
+      id,
       drillId: drill.id,
       createdAt: new Date().toISOString(),
       accuracyScore: assessment.accuracy,
@@ -185,7 +215,7 @@ attempts.post(
       pronScore: assessment.overall,
       wordScores: toWordScores(assessment),
       featureFindings: [],
-      audioKey: null,
+      audioKey,
     };
 
     await c.env.DB.prepare(
@@ -240,6 +270,31 @@ attempts.get('/', async (c) => {
     .all<AttemptRow>();
 
   return c.json({ attempts: results.map(toAttempt) });
+});
+
+/**
+ * Streams the learner's recording for an attempt, for replay against the reference.
+ *
+ * Attempt audio never changes once written — the key is a fresh UUID — so it is cacheable
+ * indefinitely. `private` because it is the user's own voice.
+ */
+attempts.get('/:id/audio', async (c) => {
+  const row = await c.env.DB.prepare('SELECT audio_key FROM attempts WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<{ audio_key: string | null }>();
+
+  if (!row) return c.json({ error: 'attempt not found' }, 404);
+  if (!row.audio_key) return c.json({ error: 'no audio was stored for this attempt' }, 404);
+
+  const object = await c.env.AUDIO.get(row.audio_key);
+  if (!object) return c.json({ error: 'audio is no longer available' }, 404);
+
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': 'audio/wav',
+      'Cache-Control': 'private, max-age=31536000, immutable',
+    },
+  });
 });
 
 /** Fetches one attempt. */
