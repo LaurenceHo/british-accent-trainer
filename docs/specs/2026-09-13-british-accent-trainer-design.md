@@ -259,6 +259,40 @@ Decisions, recorded here so they are not relitigated in review:
 
 ---
 
+## Progress screen (Task 11)
+
+A second view, reached from the header, showing practice over the last 90 days. Decisions:
+
+- **Navigation by URL hash** (`#/progress`), not a router library: two views do not need
+  one, and the hash keeps the back button and deep links working in the installed PWA.
+- **One trend per RP feature**, never a global average — a learner improving on BATH and
+  neglecting LOT should see exactly that. Unpractised features are listed as such rather
+  than hidden, so the gap is visible.
+- **The y-axis is clarity, captioned as clarity.** Each point is a day's mean accuracy
+  from `GET /api/progress`. The caption repeats that it measures how clearly the words came
+  through, not accent.
+- **Drawn as a small SVG chart, no chart library.** Days are placed by date across the
+  whole window, so a gap in practice shows as a gap. Each chart has an accessible name
+  summarising it (days practised, first and latest value) and a data table beneath it in a
+  disclosure, so nothing depends on seeing the line.
+- **Days break at the learner's local midnight**: the client sends its UTC offset as
+  `tzOffsetMinutes`, which the API already accepts.
+- **"Today" comes from the server**, which returns it alongside the buckets. Placing days
+  against the device's own clock would let a clock a few minutes out push the newest day
+  off the chart, since the server drew the day boundaries.
+- **The trends and the recent attempts load independently**, so a failing progress query
+  never hides the replays.
+- **Navigating moves focus to the main region**, since a hash change swaps the content
+  silently. Leaving Practise discards an unsubmitted take and the selected drill; keeping
+  them would mean holding a live recorder across views, which is not worth it for a
+  two-view app.
+- **Recent attempts with replay** (completing Task 10): the latest attempts are listed with
+  their drill, time and clarity. Audio is fetched only when the learner asks to replay one,
+  and attempts whose audio was not stored say so instead of offering a broken player.
+- **Empty state**: with no attempts at all, the screen says so and points back to the drills.
+
+---
+
 ## Tech Stack
 
 | Concern | Choice | Rationale |

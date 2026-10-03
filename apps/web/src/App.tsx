@@ -1,20 +1,83 @@
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { DrillScreen } from '@/components/drill-screen';
+import { ProgressScreen } from '@/components/progress-screen';
+import { cn } from '@/lib/utils';
+
+/** The app's views, addressed by URL hash so the back button and deep links work. */
+const ROUTES = {
+  drills: { hash: '#/', label: 'Practise' },
+  progress: { hash: '#/progress', label: 'Progress' },
+} as const;
+
+type Route = keyof typeof ROUTES;
+
+function subscribe(onChange: () => void): () => void {
+  window.addEventListener('hashchange', onChange);
+  return () => window.removeEventListener('hashchange', onChange);
+}
+
+/** The current view. Anything unrecognised is the practice screen, the app's home. */
+function useRoute(): Route {
+  const hash = useSyncExternalStore(subscribe, () => window.location.hash);
+  return hash === ROUTES.progress.hash ? 'progress' : 'drills';
+}
 
 /**
  * Application shell. The header sits outside `<main>` so it is exposed as the page's
  * banner landmark; nested inside `<main>` it would be just another region of content.
  */
 export function App() {
+  const route = useRoute();
+  const mainRef = useRef<HTMLElement>(null);
+  // The route last shown. Compared rather than a "first render" flag, which StrictMode's
+  // double-run of effects would flip on load.
+  const shownRoute = useRef(route);
+
+  useEffect(() => {
+    document.title = `${ROUTES[route].label} · British Accent Trainer`;
+    // A hash navigation swaps the content without a page load, and most screen readers do
+    // not announce a title change. Moving focus to the new content does announce it, and
+    // puts keyboard users there. Not on first load, where focus belongs at the page's top.
+    if (shownRoute.current === route) return;
+    shownRoute.current = route;
+    mainRef.current?.focus();
+  }, [route]);
+
   return (
     <div className="mx-auto max-w-5xl p-6">
-      <header className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">British Accent Trainer</h1>
-        <p className="text-muted-foreground mt-1">
-          Hear a native model, record yourself, and compare the two.
-        </p>
+      <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">British Accent Trainer</h1>
+          <p className="text-muted-foreground mt-1">
+            Hear a native model, record yourself, and compare the two.
+          </p>
+        </div>
+        <nav aria-label="Main">
+          <ul className="flex gap-1">
+            {(Object.keys(ROUTES) as Route[]).map((key) => {
+              const current = key === route;
+              return (
+                <li key={key}>
+                  <a
+                    href={ROUTES[key].hash}
+                    aria-current={current ? 'page' : undefined}
+                    className={cn(
+                      'block rounded-md px-3 py-1.5 text-sm',
+                      'hover:bg-accent focus-visible:ring-ring focus-visible:ring-2',
+                      // Not colour alone: the current view is also bold.
+                      current && 'bg-accent font-semibold',
+                    )}
+                  >
+                    {ROUTES[key].label}
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
       </header>
-      <main>
-        <DrillScreen />
+      <main ref={mainRef} tabIndex={-1} aria-label={ROUTES[route].label} className="outline-none">
+        {route === 'progress' ? <ProgressScreen /> : <DrillScreen />}
       </main>
     </div>
   );

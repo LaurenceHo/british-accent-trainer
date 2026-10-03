@@ -139,3 +139,39 @@ export interface Attempt {
   readonly featureFindings: readonly FeatureFinding[];
   readonly audioKey: string | null;
 }
+
+/** One day's practice on one feature. */
+export interface DailyProgress {
+  /** Calendar date in the requested timezone, `YYYY-MM-DD`. */
+  readonly date: string;
+  readonly attempts: number;
+  /** Mean clarity accuracy, 0-100, or null if no attempt that day produced a score. */
+  readonly averageAccuracy: number | null;
+  readonly averageFluency: number | null;
+}
+
+/** Progress on one RP feature. */
+export interface FeatureProgress {
+  readonly feature: RpFeature;
+  readonly label: string;
+  /** Total attempts in the window. Zero means the feature has not been practised. */
+  readonly attempts: number;
+  /** Oldest first, one entry per day with at least one attempt. */
+  readonly days: readonly DailyProgress[];
+}
+
+/** Response of `GET /api/progress`. */
+export interface ProgressResponse {
+  /** Always `clarity`: the averages measure intelligibility, never accent. */
+  readonly measures: 'clarity';
+  /** Whole local days covered, today included. */
+  readonly windowDays: number;
+  /**
+   * The window's last day, `YYYY-MM-DD`, by the server's clock at the requested offset.
+   * Clients place days relative to this rather than their own clock, so a device clock a
+   * few minutes out cannot push the newest day off the chart.
+   */
+  readonly today: string;
+  /** Every RP feature, including unpractised ones, in a fixed order. */
+  readonly features: readonly FeatureProgress[];
+}

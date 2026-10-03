@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { RP_FEATURE_LABELS, RP_FEATURES } from '../domain';
-import type { DailyProgress, Env, ProgressResponse } from '../types';
+import { RP_FEATURE_LABELS, RP_FEATURES, type DailyProgress, type ProgressResponse } from '../domain';
+import type { Env } from '../types';
 
 /**
  * Practice progress, grouped by RP feature.
@@ -76,6 +76,16 @@ export function windowStart(now: number, days: number, offsetMinutes: number): s
   return new Date(localStart - offsetMs).toISOString();
 }
 
+/**
+ * Today's date, `YYYY-MM-DD`, at the given offset — the same boundary the day buckets use.
+ *
+ * @param now - Current time, in milliseconds since the epoch.
+ * @param offsetMinutes - Minutes east of UTC.
+ */
+export function localToday(now: number, offsetMinutes: number): string {
+  return new Date(now + offsetMinutes * 60 * 1000).toISOString().slice(0, 10);
+}
+
 const progress = new Hono<{ Bindings: Env }>();
 
 /**
@@ -111,7 +121,8 @@ progress.get('/', async (c) => {
     );
   }
 
-  const since = windowStart(Date.now(), windowDays, tzOffset);
+  const now = Date.now();
+  const since = windowStart(now, windowDays, tzOffset);
   const shift = `${tzOffset} minutes`;
 
   // `shift` is built from a validated integer, but it is still bound, never interpolated.
@@ -154,6 +165,7 @@ progress.get('/', async (c) => {
   const body: ProgressResponse = {
     measures: 'clarity',
     windowDays,
+    today: localToday(now, tzOffset),
     features: RP_FEATURES.map((feature) => {
       const days = byFeature.get(feature) ?? [];
       return {

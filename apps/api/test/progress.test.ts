@@ -1,9 +1,8 @@
 import { env } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import app from '../src/index';
-import { RP_FEATURES } from '../src/domain';
+import { RP_FEATURES, type ProgressResponse } from '../src/domain';
 import { windowStart } from '../src/routes/progress';
-import type { ProgressResponse } from '../src/types';
 import { seedDrill } from './route-helpers';
 
 /**
@@ -54,6 +53,14 @@ afterEach(() => vi.useRealTimers());
 describe('GET /api/progress', () => {
   it('labels what it measures, so nobody reads clarity as accent', async () => {
     expect((await progress()).measures).toBe('clarity');
+  });
+
+  it('says which day is today, on the same boundary as the buckets', async () => {
+    // Now is 2026-06-30 12:00 UTC: already 1 July from UTC+12, exactly midnight at UTC-12.
+    expect((await progress()).today).toBe('2026-06-30');
+    expect((await progress('?tzOffsetMinutes=720')).today).toBe('2026-07-01');
+    expect((await progress('?tzOffsetMinutes=719')).today).toBe('2026-06-30');
+    expect((await progress('?tzOffsetMinutes=-720')).today).toBe('2026-06-30');
   });
 
   it('lists every RP feature, including ones never practised', async () => {
