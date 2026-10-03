@@ -26,6 +26,7 @@ bun run test                                  # Run all tests
 bun run lint                                  # ESLint (--fix to autofix)
 bun run dev                                   # Run the Worker API locally (from repo root)
 bun run dev -- --port 8788                    # ...on a specific port
+bun run --filter web dev                      # Web app on :5173, proxying /api to :8787
 
 # Workspace-scoped (args do NOT pass through the root script cleanly)
 bun run --filter api test                     # API tests only
@@ -46,7 +47,9 @@ apps/api/          Hono REST API on Cloudflare Workers
   src/lexicon/     British IPA lookup + phone-set mapping
   migrations/      D1 SQL — schema only, never seed data
   test/fixtures/   Checked-in WAV + captured API response JSON
-apps/web/          React + Vite PWA (added at Task 3; absent before then)
+apps/web/          React + Vite PWA — shadcn/ui, Tailwind v4, Vitest + jsdom
+  src/audio/       Recording → 16 kHz mono WAV (use-recorder, to-wav, wav-encoder)
+  src/components/ui/  shadcn components, copied in and edited directly
 content/           Drill corpus as typed data, loaded by scripts/seed.ts
 docs/plans/        YYYY-MM-DD-<slug>.md
 docs/specs/        YYYY-MM-DD-<slug>-design.md
@@ -146,6 +149,13 @@ reference implementation, **not as a shipping feature**.
   vitest 5 breaks it.
 - **D1 needs the Workers pool.** API tests run under `@cloudflare/vitest-plugin` because
   Bun's own test runner cannot provide a D1 binding.
+- **Tailwind v4 has no `tailwind.config.js`.** It is the `@tailwindcss/vite` plugin plus `@import
+  "tailwindcss"` in `src/index.css`; theme tokens live in that CSS file. Tutorials written for
+  v3 will tell you otherwise.
+- **shadcn imports `cn` from a package called `cn`**, not from `clsx` + `tailwind-merge`.
+  That is current shadcn (`shadcn-ui/cn`, published by shadcn), not a typosquat — checked.
+- **`bun install` and `bunx` fail intermittently on Windows** with `EPERM … moving "x" to
+  cache dir failed`. It is transient file locking; rerun and it clears.
 
 ## Code style
 
