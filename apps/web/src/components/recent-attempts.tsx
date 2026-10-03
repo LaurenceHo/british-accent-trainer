@@ -1,5 +1,5 @@
 import type { Attempt } from '@api/domain';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { attemptAudioUrl } from '@/api/client';
 import { useAudioBytes, useDrills, useRecentAttempts } from '@/api/hooks';
 import { useWavBlob } from '@/audio/use-blob-source';
@@ -35,7 +35,8 @@ export function RecentAttempts() {
         <AttemptRow
           key={attempt.id}
           attempt={attempt}
-          sentence={sentences.get(attempt.drillId) ?? attempt.drillId}
+          // The raw id only if the drill has gone; while drills load, a placeholder.
+          sentence={sentences.get(attempt.drillId) ?? (drills.isPending ? '…' : attempt.drillId)}
         />
       ))}
     </ul>
@@ -45,6 +46,8 @@ export function RecentAttempts() {
 function AttemptRow({ attempt, sentence }: { readonly attempt: Attempt; readonly sentence: string }) {
   const [replaying, setReplaying] = useState(false);
   const when = formatWhen(attempt.createdAt);
+  const playerId = useId();
+  const action = replaying ? 'Hide' : 'Replay';
 
   return (
     <li className="space-y-2 p-3">
@@ -60,17 +63,24 @@ function AttemptRow({ attempt, sentence }: { readonly attempt: Attempt; readonly
           <Button
             variant="outline"
             size="sm"
+            // Ten buttons all named "Replay" are indistinguishable in a screen reader's list
+            // of controls. The name starts with the visible word, so voice control still works.
+            aria-label={`${action} ${sentence}, ${when}`}
             aria-expanded={replaying}
+            aria-controls={playerId}
             onClick={() => setReplaying((r) => !r)}
           >
-            {replaying ? 'Hide' : 'Replay'}
+            {action}
           </Button>
         ) : (
           <span className="text-muted-foreground text-sm">Recording not stored</span>
         )}
       </div>
-      {/* Mounted on demand, so a list of recordings does not download them all. */}
-      {replaying && <AttemptAudio attemptId={attempt.id} label={`Your attempt, ${when}`} />}
+      {/* The player is mounted on demand, so a list of recordings does not download them all.
+          The wrapper is always present, as the target of the button's aria-controls. */}
+      <div id={playerId}>
+        {replaying && <AttemptAudio attemptId={attempt.id} label={`Your attempt, ${when}`} />}
+      </div>
     </li>
   );
 }

@@ -1,15 +1,14 @@
 import type { FeatureProgress } from '@api/domain';
+import { percent } from '@/lib/utils';
 import { describeTrend, trendPoints } from '@/progress/trend';
 
 /** Props for {@link TrendChart}. */
 export interface TrendChartProps {
   readonly feature: FeatureProgress;
   readonly windowDays: number;
-  /** Today's local date, `YYYY-MM-DD`: the right edge of the chart. */
+  /** The window's last day, `YYYY-MM-DD`, as the server counted it: the chart's right edge. */
   readonly today: string;
 }
-
-const percent = (fraction: number) => `${(fraction * 100).toFixed(2)}%`;
 
 /**
  * One RP feature's clarity over the window: a line through each practised day, placed by
@@ -21,17 +20,16 @@ const percent = (fraction: number) => `${(fraction * 100).toFixed(2)}%`;
  */
 export function TrendChart({ feature, windowDays, today }: TrendChartProps) {
   const points = trendPoints(feature.days, windowDays, today);
-  const summary = describeTrend(feature, points, windowDays);
-  const scored = feature.days.filter((d) => d.averageAccuracy !== null);
+  const practised = feature.attempts > 0;
 
   return (
     <figure className="space-y-2 rounded-lg border p-4">
       <figcaption className="flex items-baseline justify-between gap-2">
         <span className="font-medium">{feature.label}</span>
         <span className="text-muted-foreground text-sm">
-          {feature.attempts === 0
-            ? 'Not practised yet'
-            : `${feature.attempts} ${feature.attempts === 1 ? 'attempt' : 'attempts'}`}
+          {practised
+            ? `${feature.attempts} ${feature.attempts === 1 ? 'attempt' : 'attempts'}`
+            : 'Not practised yet'}
         </span>
       </figcaption>
 
@@ -45,38 +43,41 @@ export function TrendChart({ feature, windowDays, today }: TrendChartProps) {
           <span>50</span>
           <span>0</span>
         </div>
-        <div className="bg-muted/40 relative h-24 flex-1 rounded-md">
-          <svg
-            role="img"
-            aria-label={summary}
-            className="absolute inset-0 h-full w-full"
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
-          >
-            <line x1="0" y1="50" x2="100" y2="50" className="stroke-border" vectorEffect="non-scaling-stroke" />
-            {points.length > 1 && (
-              <polyline
-                points={points.map((p) => `${p.x * 100},${100 - p.value}`).join(' ')}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                vectorEffect="non-scaling-stroke"
+        {/* Inset so a point at 0, 100 or either end of the window is drawn whole. */}
+        <div className="bg-muted/40 rounded-md p-1.5 flex-1">
+          <div className="relative h-21">
+            <svg
+              role="img"
+              aria-label={describeTrend(feature, points, windowDays)}
+              className="absolute inset-0 h-full w-full overflow-visible"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+            >
+              <line x1="0" y1="50" x2="100" y2="50" className="stroke-border" vectorEffect="non-scaling-stroke" />
+              {points.length > 1 && (
+                <polyline
+                  points={points.map((p) => `${p.x * 100},${100 - p.value}`).join(' ')}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+            </svg>
+            {points.map((p) => (
+              <span
+                key={p.date}
+                aria-hidden="true"
+                data-testid="trend-point"
+                className="bg-foreground absolute size-2 -translate-x-1/2 translate-y-1/2 rounded-full"
+                style={{ left: percent(p.x), bottom: percent(p.value / 100) }}
               />
-            )}
-          </svg>
-          {points.map((p) => (
-            <span
-              key={p.date}
-              aria-hidden="true"
-              data-testid="trend-point"
-              className="bg-foreground absolute size-2 -translate-x-1/2 translate-y-1/2 rounded-full"
-              style={{ left: percent(p.x), bottom: percent(p.value / 100) }}
-            />
-          ))}
+            ))}
+          </div>
         </div>
       </div>
 
-      {scored.length > 0 && (
+      {practised && (
         <details className="text-sm">
           <summary className="cursor-pointer">Show the numbers</summary>
           <table className="mt-2 w-full text-left">
@@ -89,11 +90,12 @@ export function TrendChart({ feature, windowDays, today }: TrendChartProps) {
               </tr>
             </thead>
             <tbody>
-              {scored.map((d) => (
+              {/* Every practised day, so the attempts add up to the total above. */}
+              {feature.days.map((d) => (
                 <tr key={d.date}>
                   <td>{d.date}</td>
                   <td>{d.attempts}</td>
-                  <td>{d.averageAccuracy}</td>
+                  <td>{d.averageAccuracy ?? 'Not scored'}</td>
                 </tr>
               ))}
             </tbody>

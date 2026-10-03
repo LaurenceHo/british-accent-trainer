@@ -60,6 +60,16 @@ describe('App', () => {
     expect(screen.queryByRole('heading', { name: 'Clarity by feature' })).not.toBeInTheDocument();
   });
 
+  it('moves focus to the new view on navigation, but not on first load', async () => {
+    // A hash change swaps content silently; focus is what makes a screen reader announce it.
+    renderWithClient(<App />);
+    expect(screen.getByRole('main')).not.toHaveFocus();
+
+    await navigate('#/progress');
+
+    expect(screen.getByRole('main', { name: 'Progress' })).toHaveFocus();
+  });
+
   it('treats an unknown address as the practice screen', async () => {
     renderWithClient(<App />);
 

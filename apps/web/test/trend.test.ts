@@ -1,19 +1,7 @@
-import type { DailyProgress, FeatureProgress } from '@api/domain';
+import type { FeatureProgress } from '@api/domain';
 import { describe, expect, it } from 'vitest';
-import { daysBetween, describeTrend, localDateString, trendPoints } from '@/progress/trend';
-
-const day = (date: string, averageAccuracy: number | null, attempts = 1): DailyProgress => ({
-  date,
-  attempts,
-  averageAccuracy,
-  averageFluency: null,
-});
-
-describe('localDateString', () => {
-  it('uses the local calendar, zero-padded', () => {
-    expect(localDateString(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05');
-  });
-});
+import { daysBetween, describeTrend, trendPoints } from '@/progress/trend';
+import { day } from './fixtures';
 
 describe('daysBetween', () => {
   it('counts calendar days, across month and year ends', () => {

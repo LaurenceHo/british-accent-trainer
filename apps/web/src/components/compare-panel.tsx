@@ -5,6 +5,7 @@ import { useBlobSource, useWavBlob } from '@/audio/use-blob-source';
 import { readPcmClip, type PcmClip } from '@/audio/wav-reader';
 import { axisFraction, computePeaks, unclearWords, type UnclearWord } from '@/audio/waveform';
 import { Button } from '@/components/ui/button';
+import { percent } from '@/lib/utils';
 
 /** Horizontal resolution of a full-width waveform. Shorter clips get proportionally fewer. */
 const FULL_WIDTH_BARS = 300;
@@ -32,8 +33,6 @@ function readClip(wav: ArrayBuffer | null): PcmClip | null {
     return null;
   }
 }
-
-const percent = (fraction: number) => `${(fraction * 100).toFixed(2)}%`;
 
 const SIDE_LABELS: Record<Side, string> = { reference: 'Native reference', take: 'Your take' };
 

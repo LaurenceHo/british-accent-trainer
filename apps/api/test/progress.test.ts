@@ -55,6 +55,14 @@ describe('GET /api/progress', () => {
     expect((await progress()).measures).toBe('clarity');
   });
 
+  it('says which day is today, on the same boundary as the buckets', async () => {
+    // Now is 2026-06-30 12:00 UTC: already 1 July from UTC+12, exactly midnight at UTC-12.
+    expect((await progress()).today).toBe('2026-06-30');
+    expect((await progress('?tzOffsetMinutes=720')).today).toBe('2026-07-01');
+    expect((await progress('?tzOffsetMinutes=719')).today).toBe('2026-06-30');
+    expect((await progress('?tzOffsetMinutes=-720')).today).toBe('2026-06-30');
+  });
+
   it('lists every RP feature, including ones never practised', async () => {
     // "YOD has never been practised" is itself useful — an absent row would hide it.
     const body = await progress();

@@ -1,12 +1,12 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { DrillScreen } from '@/components/drill-screen';
 import { ProgressScreen } from '@/components/progress-screen';
 import { cn } from '@/lib/utils';
 
 /** The app's views, addressed by URL hash so the back button and deep links work. */
 const ROUTES = {
-  drills: { hash: '#/', label: 'Practise', title: 'Practise' },
-  progress: { hash: '#/progress', label: 'Progress', title: 'Progress' },
+  drills: { hash: '#/', label: 'Practise' },
+  progress: { hash: '#/progress', label: 'Progress' },
 } as const;
 
 type Route = keyof typeof ROUTES;
@@ -28,10 +28,19 @@ function useRoute(): Route {
  */
 export function App() {
   const route = useRoute();
+  const mainRef = useRef<HTMLElement>(null);
+  // The route last shown. Compared rather than a "first render" flag, which StrictMode's
+  // double-run of effects would flip on load.
+  const shownRoute = useRef(route);
 
-  // The title is what a screen reader announces on navigation, and what history shows.
   useEffect(() => {
-    document.title = `${ROUTES[route].title} · British Accent Trainer`;
+    document.title = `${ROUTES[route].label} · British Accent Trainer`;
+    // A hash navigation swaps the content without a page load, and most screen readers do
+    // not announce a title change. Moving focus to the new content does announce it, and
+    // puts keyboard users there. Not on first load, where focus belongs at the page's top.
+    if (shownRoute.current === route) return;
+    shownRoute.current = route;
+    mainRef.current?.focus();
   }, [route]);
 
   return (
@@ -67,7 +76,9 @@ export function App() {
           </ul>
         </nav>
       </header>
-      <main>{route === 'progress' ? <ProgressScreen /> : <DrillScreen />}</main>
+      <main ref={mainRef} tabIndex={-1} aria-label={ROUTES[route].label} className="outline-none">
+        {route === 'progress' ? <ProgressScreen /> : <DrillScreen />}
+      </main>
     </div>
   );
 }

@@ -7,12 +7,6 @@ import type { DailyProgress, FeatureProgress } from '@api/domain';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** A date as `YYYY-MM-DD` in the learner's local calendar — the API's day boundary. */
-export function localDateString(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
 /** Whole days from `from` to `to`, both `YYYY-MM-DD`. Calendar days, so DST cannot skew it. */
 export function daysBetween(from: string, to: string): number {
   const utc = (iso: string) => {

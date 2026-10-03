@@ -21,6 +21,9 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // Far from UTC, which CI runs in: a date helper that slips into UTC (toISOString, say)
+    // gives a different calendar day here for much of the day, so it fails rather than passes.
+    env: { TZ: 'Pacific/Auckland' },
     setupFiles: ['./test/setup.ts'],
   },
 });

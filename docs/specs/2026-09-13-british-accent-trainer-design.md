@@ -277,6 +277,15 @@ A second view, reached from the header, showing practice over the last 90 days. 
   disclosure, so nothing depends on seeing the line.
 - **Days break at the learner's local midnight**: the client sends its UTC offset as
   `tzOffsetMinutes`, which the API already accepts.
+- **"Today" comes from the server**, which returns it alongside the buckets. Placing days
+  against the device's own clock would let a clock a few minutes out push the newest day
+  off the chart, since the server drew the day boundaries.
+- **The trends and the recent attempts load independently**, so a failing progress query
+  never hides the replays.
+- **Navigating moves focus to the main region**, since a hash change swaps the content
+  silently. Leaving Practise discards an unsubmitted take and the selected drill; keeping
+  them would mean holding a live recorder across views, which is not worth it for a
+  two-view app.
 - **Recent attempts with replay** (completing Task 10): the latest attempts are listed with
   their drill, time and clarity. Audio is fetched only when the learner asks to replay one,
   and attempts whose audio was not stored say so instead of offering a broken player.
