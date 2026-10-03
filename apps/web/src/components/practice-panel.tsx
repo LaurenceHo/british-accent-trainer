@@ -1,8 +1,12 @@
 import { DIFFICULTY_LABELS, RP_FEATURE_LABELS, type Drill } from '@api/domain';
 import { useMemo } from 'react';
-import { ApiError, referenceAudioUrl } from '@/api/client';
+import { ApiError, referenceAudioUrl, type SubmittedAttempt } from '@/api/client';
 import { useAudioBlob, useSubmitAttempt } from '@/api/hooks';
-import { useRecorder, type RecorderErrorReason } from '@/audio/use-recorder';
+import {
+  useRecorder,
+  type RecorderErrorReason,
+  type RecorderState,
+} from '@/audio/use-recorder';
 import { AudioClip } from '@/components/audio-clip';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +22,13 @@ const RECORDER_ERRORS: Record<RecorderErrorReason, string> = {
   failed: 'The recording could not be processed. Please try again.',
 };
 
+/** Progress messages for the recorder's transient states; the others need none. */
+const RECORDER_PROGRESS: Partial<Record<RecorderState['status'], string>> = {
+  requesting: 'Waiting for microphone permission…',
+  recording: 'Recording — read the sentence, then press stop.',
+  processing: 'Preparing your recording…',
+};
+
 /** Props for {@link PracticePanel}. */
 export interface PracticePanelProps {
   readonly drill: Drill;
@@ -25,10 +36,6 @@ export interface PracticePanelProps {
 
 /**
  * One drill, end to end: read it, hear the native model, record yourself, compare.
- *
- * The result shows a **clarity** score and says so in words. The scoring API measures how
- * intelligibly the sentence came through; it cannot tell British from American speech
- * (`spike/FINDINGS.md`). Left uncaptioned, a number here would read as an accent score.
  *
  * Remount this component per drill (key it on the drill id) so a take never carries over.
  */
@@ -99,10 +106,9 @@ export function PracticePanel({ drill }: PracticePanelProps) {
           )}
         </div>
 
+        {/* Always mounted: a live region that appears together with its text is not announced. */}
         <p className="text-muted-foreground text-sm" aria-live="polite">
-          {state.status === 'requesting' && 'Waiting for microphone permission…'}
-          {state.status === 'recording' && 'Recording — read the sentence, then press stop.'}
-          {state.status === 'processing' && 'Preparing your recording…'}
+          {RECORDER_PROGRESS[state.status]}
         </p>
 
         {state.status === 'error' && (
@@ -116,7 +122,7 @@ export function PracticePanel({ drill }: PracticePanelProps) {
       </section>
 
       {submit.isError && (
-        <Alert variant="destructive" role="alert">
+        <Alert variant="destructive">
           <AlertTitle>Could not check this recording</AlertTitle>
           <AlertDescription>
             {submit.error instanceof ApiError ? submit.error.message : 'Please try again.'}
@@ -124,34 +130,51 @@ export function PracticePanel({ drill }: PracticePanelProps) {
         </Alert>
       )}
 
-      {submit.data && (
-        <section className="space-y-2 rounded-lg border p-4" aria-labelledby="result-heading">
-          <h3 id="result-heading" className="text-sm font-medium">
-            Clarity
-          </h3>
-          <p className="text-3xl font-semibold" aria-describedby="clarity-explainer">
-            {submit.data.attempt.accuracyScore ?? '—'}
-            <span className="text-muted-foreground text-base font-normal"> / 100</span>
-          </p>
-          <p id="clarity-explainer" className="text-muted-foreground text-sm">
-            How clearly the words came through. This is not a measure of accent — compare your
-            take with the native reference by ear for that.
-          </p>
-          {submit.data.recognisedText && (
-            <p className="text-sm">
-              Heard as: <q>{submit.data.recognisedText}</q>
-            </p>
-          )}
-          {!submit.data.audioStored && (
-            <p className="text-sm">
-              Your score was saved, but this recording could not be stored for later replay.
-            </p>
-          )}
-          <Button variant="outline" onClick={startAgain}>
-            Try again
-          </Button>
-        </section>
-      )}
+      {submit.data && <ClarityResult result={submit.data} onTryAgain={startAgain} />}
     </article>
+  );
+}
+
+/**
+ * The scored result, captioned as **clarity** and saying so in words.
+ *
+ * The scoring API measures how intelligibly the sentence came through; it cannot tell British
+ * from American speech (`spike/FINDINGS.md`). Left uncaptioned, a number here would read as
+ * an accent score.
+ */
+function ClarityResult({
+  result,
+  onTryAgain,
+}: {
+  readonly result: SubmittedAttempt;
+  readonly onTryAgain: () => void;
+}) {
+  return (
+    <section className="space-y-2 rounded-lg border p-4" aria-labelledby="result-heading">
+      <h3 id="result-heading" className="text-sm font-medium">
+        Clarity
+      </h3>
+      <p className="text-3xl font-semibold" aria-describedby="clarity-explainer">
+        {result.attempt.accuracyScore ?? '—'}
+        <span className="text-muted-foreground text-base font-normal"> / 100</span>
+      </p>
+      <p id="clarity-explainer" className="text-muted-foreground text-sm">
+        How clearly the words came through. This is not a measure of accent — compare your
+        take with the native reference by ear for that.
+      </p>
+      {result.recognisedText && (
+        <p className="text-sm">
+          Heard as: <q>{result.recognisedText}</q>
+        </p>
+      )}
+      {!result.audioStored && (
+        <p className="text-sm">
+          Your score was saved, but this recording could not be stored for later replay.
+        </p>
+      )}
+      <Button variant="outline" onClick={onTryAgain}>
+        Try again
+      </Button>
+    </section>
   );
 }

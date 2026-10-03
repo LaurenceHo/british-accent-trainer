@@ -25,29 +25,27 @@ interface ErrorBody {
   readonly code?: string;
 }
 
-async function parseError(response: Response): Promise<ApiError> {
+/** Fetches JSON from the API, throwing an {@link ApiError} on a non-2xx response. */
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, init);
+  if (response.ok) return (await response.json()) as T;
+
   let body: ErrorBody = {};
   try {
     body = (await response.json()) as ErrorBody;
   } catch {
     // Not JSON — a proxy page or an empty body. The status alone has to do.
   }
-  return new ApiError(
+  throw new ApiError(
     body.error ?? `Request failed with status ${response.status}`,
     response.status,
     body.code,
   );
 }
 
-async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(path);
-  if (!response.ok) throw await parseError(response);
-  return (await response.json()) as T;
-}
-
 /** Lists every drill, easiest first. */
 export async function fetchDrills(): Promise<Drill[]> {
-  return (await getJson<{ drills: Drill[] }>('/api/drills')).drills;
+  return (await request<{ drills: Drill[] }>('/api/drills')).drills;
 }
 
 /** The result of submitting a recording. */
@@ -66,13 +64,11 @@ export interface SubmittedAttempt {
  * @param wav - 16 kHz mono 16-bit WAV, as produced by `toScorableWav`.
  */
 export async function submitAttempt(drillId: string, wav: ArrayBuffer): Promise<SubmittedAttempt> {
-  const response = await fetch(`/api/attempts?drillId=${encodeURIComponent(drillId)}`, {
+  return request<SubmittedAttempt>(`/api/attempts?drillId=${encodeURIComponent(drillId)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'audio/wav' },
     body: wav,
   });
-  if (!response.ok) throw await parseError(response);
-  return (await response.json()) as SubmittedAttempt;
 }
 
 /** URL of a drill's native reference recording. */

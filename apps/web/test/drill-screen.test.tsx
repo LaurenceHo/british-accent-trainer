@@ -43,16 +43,17 @@ const DRILLS: Drill[] = [
   },
 ];
 
-function withDrills(response: () => Response) {
+/** Answers `/api/drills` with `response` and renders the screen. */
+function renderScreen(response: () => Response) {
   vi.stubGlobal('fetch', fetchStub({ '/api/drills': response }).stub);
+  renderWithClient(<DrillScreen />);
 }
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('DrillScreen', () => {
   it('groups drills under difficulty headings, easiest first', async () => {
-    withDrills(() => json({ drills: DRILLS }));
-    renderWithClient(<DrillScreen />);
+    renderScreen(() => json({ drills: DRILLS }));
 
     const nav = await screen.findByRole('navigation', { name: 'Drills' });
     const headings = within(nav).getAllByRole('heading').map((h) => h.textContent);
@@ -61,16 +62,14 @@ describe('DrillScreen', () => {
   });
 
   it('selects the first drill by default', async () => {
-    withDrills(() => json({ drills: DRILLS }));
-    renderWithClient(<DrillScreen />);
+    renderScreen(() => json({ drills: DRILLS }));
 
     expect(await screen.findByText('Practising: bath')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'bath' })).toHaveAttribute('aria-current', 'true');
   });
 
   it('switches drill when another is chosen, and marks it current', async () => {
-    withDrills(() => json({ drills: DRILLS }));
-    renderWithClient(<DrillScreen />);
+    renderScreen(() => json({ drills: DRILLS }));
 
     await userEvent.click(await screen.findByRole('button', { name: 'car' }));
 
@@ -80,15 +79,13 @@ describe('DrillScreen', () => {
   });
 
   it('explains how to fix an empty corpus', async () => {
-    withDrills(() => json({ drills: [] }));
-    renderWithClient(<DrillScreen />);
+    renderScreen(() => json({ drills: [] }));
 
     expect(await screen.findByText(/db:seed/)).toBeInTheDocument();
   });
 
   it('shows an error when drills cannot be loaded', async () => {
-    withDrills(() => json({ error: 'down' }, 500));
-    renderWithClient(<DrillScreen />);
+    renderScreen(() => json({ error: 'down' }, 500));
 
     expect(await screen.findByText('Drills could not be loaded')).toBeInTheDocument();
   });
