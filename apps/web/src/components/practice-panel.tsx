@@ -1,5 +1,5 @@
 import { DIFFICULTY_LABELS, RP_FEATURE_LABELS, type Drill } from '@api/domain';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { ApiError, referenceAudioUrl, type SubmittedAttempt } from '@/api/client';
 import { useAudioBytes, useSubmitAttempt } from '@/api/hooks';
 import {
@@ -7,6 +7,7 @@ import {
   type RecorderErrorReason,
   type RecorderState,
 } from '@/audio/use-recorder';
+import { useWavBlob } from '@/audio/use-blob-source';
 import { AudioClip } from '@/components/audio-clip';
 import { ComparePanel } from '@/components/compare-panel';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -42,15 +43,15 @@ export interface PracticePanelProps {
  */
 export function PracticePanel({ drill }: PracticePanelProps) {
   const reference = useAudioBytes(referenceAudioUrl(drill.id));
-  const referenceBlob = useMemo(
-    () => (reference.data ? new Blob([reference.data], { type: 'audio/wav' }) : null),
-    [reference.data],
-  );
   const recorder = useRecorder();
   const submit = useSubmitAttempt();
 
   const { state } = recorder;
   const take = state.status === 'done' ? state.wav : null;
+  // Only while there is no take: after that the comparison plays the reference itself.
+  const referenceBlob = useWavBlob(take ? null : (reference.data ?? null));
+  // Only when nothing is cached: a failed background refetch must not hide playable audio.
+  const referenceFailed = reference.isError && !reference.data;
 
   const busy = state.status === 'requesting' || state.status === 'processing' || submit.isPending;
 
@@ -98,12 +99,7 @@ export function PracticePanel({ drill }: PracticePanelProps) {
           label="Native reference"
           blob={referenceBlob}
           loading={reference.isPending}
-          // Only when nothing is cached: a failed background refetch must not hide playable audio.
-          error={
-            reference.isError && !reference.data
-              ? 'The reference recording is unavailable right now.'
-              : null
-          }
+          error={referenceFailed ? 'The reference recording is unavailable right now.' : null}
         />
       )}
 
@@ -147,6 +143,7 @@ export function PracticePanel({ drill }: PracticePanelProps) {
       {take && (
         <ComparePanel
           reference={reference.data ?? null}
+          referenceFailed={referenceFailed}
           take={take}
           // From the result, so a new take — which resets the submission — drops old markers.
           words={submit.data?.attempt.wordScores}

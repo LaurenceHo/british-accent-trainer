@@ -298,3 +298,17 @@ describe('comparing a take with the reference', () => {
     expect(screen.queryByTestId('unclear-marker')).not.toBeInTheDocument();
   });
 });
+
+describe('a failed reference alongside a take', () => {
+  it('says the reference is unavailable, rather than loading forever', async () => {
+    recorderState = { status: 'done', wav: TAKE };
+    vi.stubGlobal(
+      'fetch',
+      fetchStub({ '/api/drills/w-bath/reference-audio': () => json({ error: 'down' }, 500) }).stub,
+    );
+    renderWithClient(<PracticePanel drill={DRILL} />);
+
+    expect(await screen.findByText('The reference recording is unavailable right now.')).toBeInTheDocument();
+    expect(screen.queryByText('Loading…')).not.toBeInTheDocument();
+  });
+});

@@ -1,11 +1,11 @@
 import type { WordScore } from '@api/domain';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encodeWav, TARGET_SAMPLE_RATE } from '@/audio/wav-encoder';
 import { TICKS_PER_SECOND } from '@/audio/waveform';
 import { ComparePanel, type ComparePanelProps } from '@/components/compare-panel';
+import { renderWithClient } from './render';
 
 /** A WAV of the given length, so the shared time axis can be checked with known numbers. */
 const wavOf = (seconds: number) =>
@@ -29,11 +29,8 @@ function word(text: string, score: number, startSeconds: number, endSeconds: num
 }
 
 function renderPanel(props: Partial<ComparePanelProps> = {}) {
-  const result = render(
-    <StrictMode>
-      <ComparePanel reference={REFERENCE} take={TAKE} {...props} />
-    </StrictMode>,
-  );
+  // StrictMode, via the shared helper: it double-mounts the object-URL effects.
+  const result = renderWithClient(<ComparePanel reference={REFERENCE} take={TAKE} {...props} />);
   const [reference, take] = Array.from(result.container.querySelectorAll('audio'));
   return { ...result, reference: reference!, take: take! };
 }
@@ -268,5 +265,76 @@ describe('ComparePanel A/B playback', () => {
     screen.getByRole('button', { name: 'Play' }).focus();
     await userEvent.keyboard('{Enter}');
     expect(playTake).toHaveBeenCalledOnce();
+  });
+});
+
+describe('ComparePanel when a clip cannot play yet', () => {
+  it('says the reference failed rather than loading forever, and offers the take', async () => {
+    const { take } = renderPanel({ reference: null, referenceFailed: true });
+    const playTake = vi.spyOn(take, 'play');
+
+    expect(screen.getByText('The reference recording is unavailable right now.')).toBeInTheDocument();
+    expect(screen.queryByText('Loading…')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('radio', { name: 'Your take' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Play' }));
+    expect(playTake).toHaveBeenCalledOnce();
+  });
+
+  it('will not "play" a reference that has no audio yet', () => {
+    // A browser accepts play() on an element with no source and fires `play`, then never
+    // sounds: the button would show "Pause" over silence.
+    renderPanel({ reference: null });
+
+    expect(screen.getByRole('button', { name: 'Play' })).toBeDisabled();
+  });
+});
+
+describe('ComparePanel real-browser timing', () => {
+  it('ignores a late refusal from a clip the learner has switched away from', async () => {
+    // The take's play() is still pending when the learner flips back to the reference,
+    // which plays. When the take's refusal finally arrives it must not reset the button,
+    // or the learner could not pause what they are hearing.
+    const { take } = renderPanel();
+    let refuse: (reason: Error) => void = () => undefined;
+    vi.spyOn(take, 'play').mockImplementation(function (this: HTMLMediaElement) {
+      this.dispatchEvent(new Event('play'));
+      return new Promise<void>((_, reject) => (refuse = reject));
+    });
+    await userEvent.click(screen.getByRole('radio', { name: 'Your take' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Play' }));
+    await userEvent.click(screen.getByRole('radio', { name: 'Native reference' }));
+
+    await act(async () => refuse(new DOMException('undecodable', 'NotSupportedError')));
+
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+  });
+
+  it('stops at the end of a shorter clip rather than restarting it from zero', async () => {
+    // play() on a clip at its end starts it over, which is not the moment being compared.
+    const { reference, take } = renderPanel();
+    Object.defineProperty(reference, 'duration', { value: 1, configurable: true });
+    const playReference = vi.spyOn(reference, 'play');
+    await userEvent.click(screen.getByRole('radio', { name: 'Your take' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Play' }));
+    take.currentTime = 1.8;
+
+    await userEvent.click(screen.getByRole('radio', { name: 'Native reference' }));
+
+    expect(playReference).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
+  });
+
+  it('repeats the seek once metadata loads, in case an early one was dropped', async () => {
+    // iOS Safari ignores preload, so a clip never played has no metadata, and WebKit has
+    // dropped seeks made that early.
+    const { reference, take } = renderPanel();
+    reference.currentTime = 0.6;
+    await userEvent.click(screen.getByRole('radio', { name: 'Your take' }));
+
+    take.currentTime = 0; // the dropped seek
+    fireEvent.loadedMetadata(take);
+
+    expect(take.currentTime).toBe(0.6);
   });
 });

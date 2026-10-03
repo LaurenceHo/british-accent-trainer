@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type RefObject } from 'react';
+import { useRef, useState, type RefObject } from 'react';
 
 /** Which clip the learner is listening to. */
 export type Side = 'reference' | 'take';
@@ -25,9 +25,27 @@ export interface AbPlayer {
   readonly elementProps: (side: Side) => AbElementProps;
 }
 
-/** The furthest a clip can be sought to: its duration, once the browser knows it. */
-function clampToDuration(seconds: number, element: HTMLAudioElement): number {
-  return Number.isFinite(element.duration) ? Math.min(seconds, element.duration) : seconds;
+/**
+ * Seeks `element` to `seconds`, clamped to its length.
+ *
+ * Before metadata has loaded the duration is unknown, and WebKit has been known to drop a
+ * seek made that early — iOS Safari, which ignores `preload`, would then start the clip
+ * from zero. So the seek is repeated once the metadata arrives.
+ */
+function seek(element: HTMLAudioElement, seconds: number): void {
+  const clamped = () =>
+    Number.isFinite(element.duration) ? Math.min(seconds, element.duration) : seconds;
+  element.currentTime = clamped();
+  if (element.readyState < HTMLMediaElement.HAVE_METADATA) {
+    element.addEventListener('loadedmetadata', () => (element.currentTime = clamped()), {
+      once: true,
+    });
+  }
+}
+
+/** True once the element sits at its end, where play() would restart it from zero. */
+function atEnd(element: HTMLAudioElement): boolean {
+  return Number.isFinite(element.duration) && element.currentTime >= element.duration;
 }
 
 /**
@@ -38,76 +56,74 @@ function clampToDuration(seconds: number, element: HTMLAudioElement): number {
  * speech is harder to compare, not easier.
  *
  * `playing` follows the elements' `play`/`pause` events rather than the calls made here,
- * because `play()` can be refused (autoplay policy, audio not loaded yet) and the button
- * must not claim to be playing when nothing is.
+ * because `play()` can be refused (autoplay policy, undecodable audio) and the button must
+ * not claim to be playing when nothing is. Events from the clip that is not selected are
+ * ignored: media events are queued, so the outgoing clip can report pausing after a switch.
  */
 export function useAbPlayer(): AbPlayer {
-  const reference = useRef<HTMLAudioElement>(null);
-  const take = useRef<HTMLAudioElement>(null);
+  const refs = {
+    reference: useRef<HTMLAudioElement>(null),
+    take: useRef<HTMLAudioElement>(null),
+  };
   const [side, setSide] = useState<Side>('reference');
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
 
-  // Read synchronously by event handlers: the outgoing element's `pause` event arrives
-  // after the switch, and must not be mistaken for the new side pausing.
+  // Read synchronously by handlers, which can run before React re-renders.
   const sideRef = useRef<Side>('reference');
   const playingRef = useRef(false);
 
-  const elementFor = useCallback((s: Side) => (s === 'reference' ? reference : take).current, []);
+  const setPlayingNow = (value: boolean) => {
+    playingRef.current = value;
+    setPlaying(value);
+  };
 
-  const play = useCallback((element: HTMLAudioElement) => {
-    element.play().catch(() => {
-      playingRef.current = false;
-      setPlaying(false);
+  const play = (s: Side) => {
+    refs[s].current?.play().catch(() => {
+      // A late rejection from a clip the learner has since switched away from says
+      // nothing about the clip now playing.
+      if (sideRef.current === s) setPlayingNow(false);
     });
-  }, []);
+  };
 
-  const select = useCallback(
-    (next: Side) => {
-      const current = sideRef.current;
-      if (next === current) return;
+  const select = (next: Side) => {
+    const current = sideRef.current;
+    if (next === current) return;
 
-      const from = elementFor(current);
-      const to = elementFor(next);
-      const wasPlaying = playingRef.current;
-      const at = from?.currentTime ?? 0;
+    const from = refs[current].current;
+    const to = refs[next].current;
+    const wasPlaying = playingRef.current;
 
-      sideRef.current = next;
-      setSide(next);
-      from?.pause();
+    sideRef.current = next;
+    setSide(next);
+    from?.pause();
+    if (!to) return;
 
-      if (!to) return;
-      to.currentTime = clampToDuration(at, to);
-      setPosition(to.currentTime);
-      if (wasPlaying) play(to);
-    },
-    [elementFor, play],
-  );
+    seek(to, from?.currentTime ?? 0);
+    setPosition(to.currentTime);
+    // Past the end of a shorter clip, carrying on would restart it from zero: stop instead.
+    if (wasPlaying && !atEnd(to)) play(next);
+    else if (wasPlaying) setPlayingNow(false);
+  };
 
-  const toggle = useCallback(() => {
-    const element = elementFor(sideRef.current);
+  const toggle = () => {
+    const element = refs[sideRef.current].current;
     if (!element) return;
     if (playingRef.current) element.pause();
-    else play(element);
-  }, [elementFor, play]);
+    else play(sideRef.current);
+  };
 
   const elementProps = (s: Side): AbElementProps => {
-    const isActive = () => sideRef.current === s;
-    const setPlayingIfActive = (value: boolean) => {
-      if (!isActive()) return;
-      playingRef.current = value;
-      setPlaying(value);
+    const ifSelected = (action: () => void) => () => {
+      if (sideRef.current === s) action();
     };
     return {
-      ref: s === 'reference' ? reference : take,
-      onPlay: () => setPlayingIfActive(true),
-      onPause: () => setPlayingIfActive(false),
+      ref: refs[s],
+      onPlay: ifSelected(() => setPlayingNow(true)),
+      onPause: ifSelected(() => setPlayingNow(false)),
       // Not every browser fires `pause` when a clip plays to its end.
-      onEnded: () => setPlayingIfActive(false),
-      onTimeUpdate: () => {
-        const element = elementFor(s);
-        if (isActive() && element) setPosition(element.currentTime);
-      },
+      onEnded: ifSelected(() => setPlayingNow(false)),
+      onTimeUpdate: ifSelected(() => setPosition(refs[s].current?.currentTime ?? 0)),
     };
   };
 

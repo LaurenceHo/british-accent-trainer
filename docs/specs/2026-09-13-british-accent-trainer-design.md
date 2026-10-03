@@ -235,6 +235,14 @@ Decisions, recorded here so they are not relitigated in review:
   take — with a native radio group. Switching keeps the playback position, clamped to the
   other clip's length, and pauses the clip that is no longer selected. Playing both at once
   is not offered: overlapping speech is harder to compare, not easier.
+  - If the position is past the end of the clip being switched to, playback stops there
+    rather than carrying on, because `play()` on a finished clip restarts it from zero.
+  - Play is disabled while the selected clip has no audio. A browser accepts `play()` on
+    an empty element and fires `play`, so the button would otherwise show "Pause" over
+    silence. Only the reference can be missing; if it failed, that is said, not "Loading…".
+  - The seek on switching is repeated once metadata loads, and the elements use
+    `preload="auto"`: WebKit has dropped seeks made before metadata, and iOS ignores
+    `preload`, so the first switch could otherwise start from zero.
 - **Unclear words are marked per word, on the take only.** A word's span runs from its
   first phoneme's `offset` to its last phoneme's `offset + duration`, converted from
   100-nanosecond ticks to seconds (÷ 10⁷). Those offsets are in the take's time base and

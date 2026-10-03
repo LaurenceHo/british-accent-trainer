@@ -1,18 +1,22 @@
 import type { WordScore } from '@api/domain';
 import { useId, useMemo } from 'react';
 import { useAbPlayer, type Side } from '@/audio/use-ab-player';
+import { useBlobSource, useWavBlob } from '@/audio/use-blob-source';
 import { readPcmClip, type PcmClip } from '@/audio/wav-reader';
 import { axisFraction, computePeaks, unclearWords, type UnclearWord } from '@/audio/waveform';
-import { useBlobSource } from '@/components/audio-clip';
 import { Button } from '@/components/ui/button';
 
 /** Horizontal resolution of a full-width waveform. Shorter clips get proportionally fewer. */
 const FULL_WIDTH_BARS = 300;
 
+const UNAVAILABLE = 'Waveform unavailable for this recording.';
+
 /** Props for {@link ComparePanel}. */
 export interface ComparePanelProps {
-  /** The native reference WAV; null while it loads or when it is unavailable. */
+  /** The native reference WAV; null while it loads or when it could not be fetched. */
   readonly reference: ArrayBuffer | null;
+  /** True when the reference could not be fetched, as opposed to still loading. */
+  readonly referenceFailed?: boolean;
   /** The learner's take, as recorded. */
   readonly take: ArrayBuffer;
   /** Per-word clarity scores once the take is scored; undefined before. */
@@ -29,8 +33,6 @@ function readClip(wav: ArrayBuffer | null): PcmClip | null {
   }
 }
 
-const toBlob = (wav: ArrayBuffer | null) => (wav ? new Blob([wav], { type: 'audio/wav' }) : null);
-
 const percent = (fraction: number) => `${(fraction * 100).toFixed(2)}%`;
 
 const SIDE_LABELS: Record<Side, string> = { reference: 'Native reference', take: 'Your take' };
@@ -42,40 +44,49 @@ const SIDE_LABELS: Record<Side, string> = { reference: 'Native reference', take:
  * American (`spike/FINDINGS.md`). This makes the comparison quick to repeat: hear a moment
  * in the native voice, flip to your own, hear the same moment again.
  */
-export function ComparePanel({ reference, take, words }: ComparePanelProps) {
+export function ComparePanel({ reference, referenceFailed = false, take, words }: ComparePanelProps) {
   const referenceClip = useMemo(() => readClip(reference), [reference]);
   const takeClip = useMemo(() => readClip(take), [take]);
-  const referenceBlob = useMemo(() => toBlob(reference), [reference]);
-  const takeBlob = useMemo(() => toBlob(take), [take]);
   const unclear = useMemo(() => unclearWords(words), [words]);
 
   const player = useAbPlayer();
   const referenceProps = player.elementProps('reference');
   const takeProps = player.elementProps('take');
-  useBlobSource(referenceProps.ref, referenceBlob);
-  useBlobSource(takeProps.ref, takeBlob);
+  useBlobSource(referenceProps.ref, useWavBlob(reference));
+  useBlobSource(takeProps.ref, useWavBlob(take));
 
   const axisSeconds = Math.max(referenceClip?.durationSeconds ?? 0, takeClip?.durationSeconds ?? 0);
   const playhead = axisFraction(player.position, axisSeconds);
+  const headingId = useId();
   const groupName = useId();
 
+  // An element with no source accepts play(), fires `play` and then never sounds, so the
+  // button would claim to be playing silence. Only the reference can be missing.
+  const nothingToPlay = player.side === 'reference' && !reference;
+
   return (
-    <section className="space-y-4" aria-labelledby="compare-heading">
-      <h3 id="compare-heading" className="text-sm font-medium">
+    <section className="space-y-4" aria-labelledby={headingId}>
+      <h3 id={headingId} className="text-sm font-medium">
         Compare
       </h3>
 
       <Waveform
         label={SIDE_LABELS.reference}
         clip={referenceClip}
-        unavailable={reference ? 'Waveform unavailable for this recording.' : 'Loading…'}
+        unavailable={
+          reference
+            ? UNAVAILABLE
+            : referenceFailed
+              ? 'The reference recording is unavailable right now.'
+              : 'Loading…'
+        }
         axisSeconds={axisSeconds}
         playhead={player.side === 'reference' ? playhead : null}
       />
       <Waveform
         label={SIDE_LABELS.take}
         clip={takeClip}
-        unavailable="Waveform unavailable for this recording."
+        unavailable={UNAVAILABLE}
         axisSeconds={axisSeconds}
         playhead={player.side === 'take' ? playhead : null}
         markers={unclear}
@@ -97,14 +108,15 @@ export function ComparePanel({ reference, take, words }: ComparePanelProps) {
             </label>
           ))}
         </fieldset>
-        <Button variant="secondary" onClick={player.toggle}>
+        <Button variant="secondary" onClick={player.toggle} disabled={nothingToPlay}>
           {player.playing ? 'Pause' : 'Play'}
         </Button>
       </div>
 
-      {/* Driven by the controls above; hidden so there is one set of controls, not three. */}
-      <audio {...referenceProps} hidden />
-      <audio {...takeProps} hidden />
+      {/* Driven by the controls above; hidden so there is one set of controls, not three.
+          preload="auto" so a switch can seek straight to the shared moment. */}
+      <audio {...referenceProps} preload="auto" hidden />
+      <audio {...takeProps} preload="auto" hidden />
 
       {words && <UnclearList unclear={unclear} />}
     </section>
@@ -121,6 +133,10 @@ interface WaveformProps {
   readonly markers?: readonly UnclearWord[];
 }
 
+type PlacedWord = UnclearWord & { readonly span: NonNullable<UnclearWord['span']> };
+
+const isPlaced = (w: UnclearWord): w is PlacedWord => w.span !== null;
+
 /**
  * One clip's waveform, drawn to scale on the shared axis.
  *
@@ -130,34 +146,40 @@ interface WaveformProps {
  */
 function Waveform({ label, clip, unavailable, axisSeconds, playhead, markers = [] }: WaveformProps) {
   const width = clip ? axisFraction(clip.durationSeconds, axisSeconds) : 0;
-  const peaks = useMemo(
-    () => (clip ? computePeaks(clip.samples, Math.max(1, Math.round(FULL_WIDTH_BARS * width))) : []),
-    [clip, width],
-  );
-  const placed = markers.filter((m) => m.span);
+  // Memoised: the playhead re-renders this on every timeupdate, and none of it changes then.
+  const path = useMemo(() => {
+    if (!clip) return { d: '', bars: 0 };
+    const peaks = computePeaks(clip.samples, Math.max(1, Math.round(FULL_WIDTH_BARS * width)));
+    return {
+      d: peaks.map((p, i) => `M${i + 0.5} ${1 - p.max}V${1 - p.min}`).join(''),
+      bars: peaks.length,
+    };
+  }, [clip, width]);
+  const placed = useMemo(() => markers.filter(isPlaced), [markers]);
 
   return (
     <figure className="space-y-1">
       <figcaption className="text-sm font-medium">{label}</figcaption>
       {clip ? (
-        <div className="bg-muted/40 relative h-16 w-full rounded-md">
+        // overflow-hidden keeps a label near the end inside the box, not off the screen.
+        <div className="bg-muted/40 relative h-16 w-full overflow-hidden rounded-md">
           <svg
             role="img"
             aria-label={describe(label, clip, placed.length)}
             className="text-foreground/70 h-full"
             style={{ width: percent(width) }}
-            viewBox={`0 0 ${peaks.length} 2`}
+            viewBox={`0 0 ${path.bars} 2`}
             preserveAspectRatio="none"
           >
             <path
-              d={peaks.map((p, i) => `M${i + 0.5} ${1 - p.max}V${1 - p.min}`).join('')}
+              d={path.d}
               stroke="currentColor"
               strokeWidth={1}
               vectorEffect="non-scaling-stroke"
             />
           </svg>
           {placed.map((m, i) => (
-            <Marker key={i} marker={m} axisSeconds={axisSeconds} />
+            <Marker key={i} word={m.word} span={m.span} axisSeconds={axisSeconds} />
           ))}
           {playhead !== null && (
             <div
@@ -185,10 +207,17 @@ function describe(label: string, clip: PcmClip, unclearCount: number): string {
  * An unclear word's span on the take. Hatched and labelled with the word, so it does not
  * rely on colour; hidden from assistive technology, which gets the list below instead.
  */
-function Marker({ marker, axisSeconds }: { marker: UnclearWord; axisSeconds: number }) {
-  const { start, end } = marker.span!;
-  const left = axisFraction(start, axisSeconds);
-  const right = axisFraction(end, axisSeconds);
+function Marker({
+  word,
+  span,
+  axisSeconds,
+}: {
+  readonly word: string;
+  readonly span: PlacedWord['span'];
+  readonly axisSeconds: number;
+}) {
+  const left = axisFraction(span.start, axisSeconds);
+  const right = axisFraction(span.end, axisSeconds);
   return (
     <div
       aria-hidden="true"
@@ -196,15 +225,15 @@ function Marker({ marker, axisSeconds }: { marker: UnclearWord; axisSeconds: num
       className="border-foreground/60 absolute inset-y-0 border-x border-dashed bg-[repeating-linear-gradient(45deg,transparent_0_4px,color-mix(in_oklab,currentColor_25%,transparent)_4px_6px)]"
       style={{ left: percent(left), width: percent(right - left) }}
     >
-      <span className="bg-background/80 absolute top-0 left-0 rounded-sm px-1 text-xs">
-        {marker.word}
+      <span className="bg-background/80 absolute top-0 left-0 rounded-sm px-1 text-xs whitespace-nowrap">
+        {word}
       </span>
     </div>
   );
 }
 
 /** The unclear words in plain text: the marker cue, without needing to see the waveform. */
-function UnclearList({ unclear }: { unclear: readonly UnclearWord[] }) {
+function UnclearList({ unclear }: { readonly unclear: readonly UnclearWord[] }) {
   if (unclear.length === 0) {
     return <p className="text-sm">No word fell below the clarity threshold.</p>;
   }
