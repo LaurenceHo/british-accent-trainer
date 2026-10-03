@@ -1,17 +1,19 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '@/App';
+import { fetchStub, json, renderWithClient } from './render';
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('App', () => {
-  it('renders an accessible top-level heading', () => {
-    render(<App />);
+  it('renders an accessible top-level heading inside a main landmark', () => {
+    vi.stubGlobal('fetch', fetchStub({ '/api/drills': () => json({ drills: [] }) }).stub);
 
-    expect(screen.getByRole('heading', { level: 1, name: 'British Accent Trainer' })).toBeVisible();
-  });
+    renderWithClient(<App />);
 
-  it('places content in a main landmark', () => {
-    render(<App />);
-
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'British Accent Trainer' }),
+    ).toBeVisible();
     expect(screen.getByRole('main')).toBeInTheDocument();
   });
 });
