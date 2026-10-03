@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:test';
 import { vi } from 'vitest';
+import type { RpFeature } from '../src/domain';
 
 /**
  * Replaces global `fetch` with a stub that answers every call with `body`.
@@ -26,16 +27,18 @@ export function stubAzure(body: unknown, init: ResponseInit = { status: 200 }) {
  *
  * @param id - Drill id. Defaults to `test-drill`.
  * @param sentence - The reference text submissions are scored against.
+ * @param feature - The RP feature the drill trains. Defaults to `BATH`.
  */
 export async function seedDrill(
   id = 'test-drill',
   sentence = 'Pass me a glass of water',
+  feature: RpFeature = 'BATH',
 ): Promise<void> {
   await env.DB.prepare(
     `INSERT OR REPLACE INTO drills
      (id, sentence, target_ipa, feature, difficulty, coaching_note, has_r_context, sort_order)
-     VALUES (?, ?, 'x', 'BATH', 4, 'note', 0, 1)`,
+     VALUES (?, ?, 'x', ?, 4, 'note', 0, 1)`,
   )
-    .bind(id, sentence)
+    .bind(id, sentence, feature)
     .run();
 }
