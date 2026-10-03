@@ -58,6 +58,11 @@ function canRecord(): boolean {
   );
 }
 
+/** Stops every track, which is what turns off the browser's recording indicator. */
+function releaseMicrophone(stream: MediaStream): void {
+  stream.getTracks().forEach((track) => track.stop());
+}
+
 /**
  * Records one take from the microphone and yields it as a 16 kHz mono WAV.
  *
@@ -67,18 +72,9 @@ function canRecord(): boolean {
 export function useRecorder(): Recorder {
   const [state, setState] = useState<RecorderState>({ status: 'idle' });
 
+  // The take in progress, if any. Its stream and auto-stop timer live in start()'s closure.
   const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
-
-  const release = useCallback(() => {
-    if (timeoutRef.current !== null) clearTimeout(timeoutRef.current);
-    timeoutRef.current = null;
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    recorderRef.current = null;
-  }, []);
 
   /** Sets state only while mounted: conversion can finish after the screen has gone. */
   const safeSetState = useCallback((next: RecorderState) => {
@@ -86,13 +82,19 @@ export function useRecorder(): Recorder {
   }, []);
 
   useEffect(() => {
+    // Set here, not only in useRef: StrictMode runs cleanup and then this effect again.
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
-      release();
+      const recorder = recorderRef.current;
+      if (!recorder) return;
+      recorderRef.current = null;
+      if (recorder.state === 'recording') recorder.stop();
+      // onstop also releases, but browsers fire it asynchronously; release now so the
+      // indicator goes out with the screen.
+      releaseMicrophone(recorder.stream);
     };
-  }, [release]);
+  }, []);
 
   const stop = useCallback(() => {
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
@@ -116,7 +118,7 @@ export function useRecorder(): Recorder {
       return;
     }
     if (!mountedRef.current) {
-      stream.getTracks().forEach((track) => track.stop());
+      releaseMicrophone(stream);
       return;
     }
 
@@ -124,7 +126,6 @@ export function useRecorder(): Recorder {
     // whatever arrives. Naming one would break Safari, which cannot produce WebM.
     const recorder = new MediaRecorder(stream);
     const chunks: Blob[] = [];
-    streamRef.current = stream;
     recorderRef.current = recorder;
 
     recorder.ondataavailable = (event) => {
@@ -132,7 +133,9 @@ export function useRecorder(): Recorder {
     };
 
     recorder.onstop = () => {
-      release();
+      clearTimeout(autoStop);
+      releaseMicrophone(stream);
+      recorderRef.current = null;
       safeSetState({ status: 'processing' });
       toScorableWav(new Blob(chunks, { type: recorder.mimeType }))
         .then((wav) => safeSetState({ status: 'done', wav }))
@@ -140,9 +143,12 @@ export function useRecorder(): Recorder {
     };
 
     recorder.start();
-    timeoutRef.current = setTimeout(stop, MAX_RECORD_SECONDS * 1000);
+    // Stops this recorder, never a later one: the timer is cleared when this take ends.
+    const autoStop = setTimeout(() => {
+      if (recorder.state === 'recording') recorder.stop();
+    }, MAX_RECORD_SECONDS * 1000);
     safeSetState({ status: 'recording' });
-  }, [release, safeSetState, stop]);
+  }, [safeSetState]);
 
   const reset = useCallback(() => {
     if (recorderRef.current) return;

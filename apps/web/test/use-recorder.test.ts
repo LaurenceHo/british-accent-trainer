@@ -161,4 +161,39 @@ describe('useRecorder', () => {
     act(() => result.current.reset());
     expect(result.current.state.status).toBe('idle');
   });
+
+  it('does not let an earlier deadline cut a later take short', async () => {
+    vi.useFakeTimers();
+    const { stream } = fakeStream();
+    installMedia(async () => stream);
+    const { result } = renderHook(() => useRecorder());
+
+    await act(() => result.current.start());
+    act(() => vi.advanceTimersByTime(5_000));
+    act(() => result.current.stop());
+    await act(() => result.current.start());
+    // Past the first take's deadline, short of the second's.
+    act(() => vi.advanceTimersByTime(MAX_RECORD_SECONDS * 1000 - 5_000));
+
+    expect(FakeMediaRecorder.instances).toHaveLength(2);
+    expect(FakeMediaRecorder.instances[1]?.state).toBe('recording');
+  });
+
+  it('releases a microphone granted after the screen has unmounted', async () => {
+    const { stream, track } = fakeStream();
+    let grant: (stream: MediaStream) => void = () => undefined;
+    installMedia(() => new Promise((resolve) => (grant = resolve)));
+    const { result, unmount } = renderHook(() => useRecorder());
+
+    let starting: Promise<void> = Promise.resolve();
+    act(() => {
+      starting = result.current.start();
+    });
+    unmount();
+    grant(stream);
+    await starting;
+
+    expect(track.stop).toHaveBeenCalled();
+    expect(FakeMediaRecorder.instances).toHaveLength(0);
+  });
 });
