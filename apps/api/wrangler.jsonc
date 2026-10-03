@@ -4,13 +4,13 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
   // D1 Database binding: drills and attempts.
-  // Replace database_id with the one printed by `bunx wrangler d1 create accent-trainer`
-  // before the first deploy. It is not a secret: it is useless without an account token.
+  // database_id comes from `bunx wrangler d1 create accent-trainer`. It is not a secret:
+  // it is useless without an API token for the account.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "accent-trainer",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "2480b95d-7af5-4054-903b-afc58fe0b804",
     },
   ],
   // R2 bucket: reference TTS audio and submitted attempt audio.
