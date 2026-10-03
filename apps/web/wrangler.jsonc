@@ -1,5 +1,17 @@
 {
+  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "accent-trainer-web",
-  "pages_build_output_dir": "./dist",
-  "compatibility_date": "2026-09-01",
+  "compatibility_date": "2026-10-04",
+  // An assets-only Worker: no script, just the built app from ./dist. Unknown paths fall
+  // back to index.html. The app routes by URL hash, so this only matters for a mistyped path.
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+  },
+  // Served ONLY on the custom domain bound in the dashboard (Settings → Domains & Routes),
+  // which Cloudflare Access protects. It is deliberately not declared here, to keep the
+  // domain out of this public repository. The API Worker's route takes /api/* on the same
+  // hostname; Cloudflare gives routes precedence over custom domains.
+  "workers_dev": false,
+  "preview_urls": false,
 }

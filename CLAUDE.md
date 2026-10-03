@@ -36,7 +36,7 @@ cd apps/api && bunx wrangler dev              # Worker with local D1/R2 simulati
 cd apps/api && bun run db:migrate             # Apply D1 migrations locally
 cd apps/api && bun run db:migrate:remote      # ...and to the deployed database
 cd apps/api && bun run deploy                 # Deploy the API Worker
-cd apps/web && bun run deploy                 # Build and deploy the web app to Pages
+cd apps/web && bun run deploy                 # Build and deploy the web app (static-assets Worker)
 ```
 
 Always `bun`, never `npm`/`yarn`/`pnpm`.

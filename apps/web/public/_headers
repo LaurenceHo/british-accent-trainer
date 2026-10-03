@@ -1,4 +1,4 @@
-# Cloudflare Pages response headers.
+# Response headers for the static assets, applied by Cloudflare Workers.
 
 # Vite fingerprints these names, so a file's content never changes under the same URL.
 /assets/*
