@@ -162,6 +162,9 @@ reference implementation, **not as a shipping feature**.
   domain, and this repository is public. They are bound once in the Cloudflare dashboard,
   and `wrangler deploy` leaves them in place. Keep `workers_dev` and `preview_urls` false:
   each would be an address outside Cloudflare Access. See README → Deploying.
+  If wrangler ever offers to "update the local config file with the remote values" (it does
+  when a Worker was last changed in the dashboard), **answer no**: it would write the route,
+  and so the domain, into `wrangler.jsonc`.
 - **Tailwind v4 has no `tailwind.config.js`.** It is the `@tailwindcss/vite` plugin plus `@import
   "tailwindcss"` in `src/index.css`; theme tokens live in that CSS file. Tutorials written for
   v3 will tell you otherwise.
