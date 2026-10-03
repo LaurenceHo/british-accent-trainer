@@ -82,7 +82,9 @@ Also `en-US`-only, and therefore unavailable to us:
 
 **Product consequence:** Azure scores each phoneme but will not say *which* phoneme it
 scored. Symbol-level red/green highlighting therefore cannot come from the engine alone —
-the symbols must come from our own lexicon.
+the symbols would have to come from our own lexicon. (In the end no lexicon was built: the
+scores cannot be aligned to British symbols at all — see the Feedback Ladder — so each
+drill's target IPA is written by hand instead. See "Resolved".)
 
 ### Cloudflare Workers is viable — via REST, not the Node SDK
 
@@ -144,7 +146,7 @@ rung survives** — this is a deliberate scope decision, not a hedge.
 | 1 | Phoneme names + scores straight from the engine | **Dead.** Names are `""` at `en-GB`. |
 | 2 | Phoneme scores aligned **by index** to a local British IPA sequence | **Dead.** Azure segments *car* into 3 phones against an en-US inventory; RP has 2. The arrays cannot correspond. |
 | 3 | Phoneme scores aligned **by time** (`Offset`/`Duration`) over the waveform | **Mechanically alive, semantically empty.** Timings are present, but the scores they would colour do not track RP — identical for British and American readings. |
-| 4 | Word-level scores + target IPA shown from the lexicon as reference | **Alive**, and the only honest option on Azure — provided the UI never implies the score measures RP-ness. |
+| 4 | Word-level scores + target IPA (hand-written per drill) shown as reference | **Alive**, and the only honest option on Azure — provided the UI never implies the score measures RP-ness. |
 
 **The blocker is not feedback granularity — the underlying scores do not measure the target
 accent.** Rungs 3 and 4 are presentation choices over a signal that is blind to RP.
@@ -345,7 +347,7 @@ Decisions:
 | UI components | **shadcn/ui + Tailwind** | Components are copied into the repo rather than installed, so they are editable and add no runtime dependency. Built on Radix primitives, which supply keyboard and ARIA behaviour that the accessibility requirements below depend on. |
 | Data fetching | **TanStack Query** | Always wrapped in custom hooks, never called directly in components. |
 | Audio capture | `MediaRecorder` → `AudioContext` decode → resample → **client-side WAV encoder** | Azure needs 16 kHz / 16-bit / mono PCM; browsers emit WebM/Opus. |
-| Phoneme symbols | **Local British English lexicon** | Azure cannot supply `en-GB` phoneme names, so symbols must come from our own data. |
+| Phoneme symbols | **Hand-written RP IPA per drill** | Azure cannot supply `en-GB` phoneme names, and its scores cannot be aligned to British symbols, so the only symbols shown are each drill's target IPA, written by hand and test-checked as non-rhotic. |
 | Language | TypeScript strict, **no `any`** | Project standard. |
 | Toolchain | **`bun`** | Project standard. |
 | Python | **Excluded** | Rules out Montreal Forced Aligner, Kaldi, and FastAPI. |
@@ -380,13 +382,12 @@ pool (see Testing Strategy); Bun's own runner will not provide a D1 binding.
 ```
 apps/api/                        → Cloudflare Worker (Hono) REST API
   src/index.ts                   → Worker entry, route mounting
-  src/types.ts                   → Shared domain interfaces
-  src/validation.ts              → Request validation (audio format, duration)
+  src/domain.ts                  → Types shared with the web app (import-free, lint-enforced)
+  src/types.ts                   → Worker bindings and server-only types
   src/routes/                    → drills, attempts, reference-audio, progress
   src/scoring/                   → provider.ts (interface) + azure.ts (adapter)
-  src/lexicon/                   → lookup.ts, phone-map.ts
   src/tts/                       → azure.ts (en-GB neural TTS)
-  src/audio/                     → wav.ts (WAV header parsing and validation)
+  src/audio/                     → wav.ts (WAV parsing, and request validation: format, duration)
   src/azure-config.ts            → reads and validates Azure credentials
   migrations/                    → D1 SQL migrations
   test/                          → API tests
@@ -399,12 +400,15 @@ apps/web/                        → React + Vite PWA
   src/api/                       → client, hooks (TanStack Query), query-keys, query-client
   src/components/                → drill-screen, practice-panel, audio-clip, compare-panel
   src/components/ui/             → shadcn/ui components (copied in, editable, committed)
-  src/scoring/align.ts           → Score ↔ IPA alignment
+  src/progress/                  → trend maths for the progress screen
+  src/sw/                        → service worker, its routing rules, registration
+  src/lib/                       → small shared helpers (cn, percent, use-online)
   test/                          → Component and unit tests
-  public/manifest.json           → PWA manifest
+  scripts/                       → make-icons.ts, png.ts (icon generation)
+  public/manifest.webmanifest    → PWA manifest
 
 spike/                           → Throwaway engine spike (Task 1). Not shipped.
-scripts/                         → One-off tooling (lexicon import)
+scripts/                         → One-off tooling (seed.ts loads content/drills.ts into D1)
 docs/plans/                      → YYYY-MM-DD-<slug>.md
 docs/specs/                      → YYYY-MM-DD-<slug>-design.md
 docs/todo.md                     → working task checklist (gitignored)
@@ -422,7 +426,7 @@ boundary, and no `any` — ever. A representative API route:
 export interface Drill {
   readonly id: string;
   readonly sentence: string;
-  /** Target RP pronunciation in IPA, sourced from the local lexicon. */
+  /** Target RP pronunciation in IPA, hand-written in content/drills.ts. */
   readonly targetIpa: string;
   /** The RP feature this drill trains, e.g. "non-rhotic-r". */
   readonly feature: RpFeature;
@@ -508,7 +512,7 @@ The standing bar every task clears, on top of its own acceptance criteria:
   the entire purpose of the app. *(The `en-US` inversion detector was explored and
   rejected — see Rung 5. Do not revive it.)*
 - Present an `en-GB` score as a measure of RP-ness — measured, it is not one
-- Use CMUdict as the primary lexicon — it is American and rhotic, encoding the very
+- Use CMUdict as a source of IPA — it is American and rhotic, encoding the very
   pronunciations this app trains against
 - Render a phoneme symbol the engine did not actually score
 - Report a feature as wrong when the detector simply could not tell — non-detection is
@@ -586,6 +590,12 @@ Gate and is therefore not promised at project level.
 
 ### Resolved — not open
 
+- **No pronunciation lexicon (Task 9 dropped, 2026-10-03).** A lexicon was planned to put
+  British symbols on Azure's per-phoneme scores. The spike showed those scores cannot be
+  aligned to a British transcription and do not track RP, so that use is gone. Each
+  drill's target IPA is hand-written in `content/drills.ts`, and `apps/api/test/content.test.ts`
+  checks it is non-rhotic (/r/ only before a vowel, no American r-coloured symbols). A
+  lexicon would earn its keep only for learner-typed sentences.
 - **Frontend framework: React + Vite.** Project standards cover *both* React and
   Vue + PrimeVue, so React is not in tension with it.
 - **Azure resource and tier** — folded into Task 0's acceptance criteria, since the spike

@@ -84,7 +84,7 @@ export interface Drill {
   readonly id: string;
   /** The text the user reads aloud. A word, a pair, a phrase, or a sentence. */
   readonly sentence: string;
-  /** Target RP pronunciation in IPA. Sourced from the British lexicon, never from the API. */
+  /** Target RP pronunciation in IPA. Hand-written in content/drills.ts, never from the API. */
   readonly targetIpa: string;
   readonly feature: RpFeature;
   readonly difficulty: Difficulty;

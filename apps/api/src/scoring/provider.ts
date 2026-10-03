@@ -35,7 +35,7 @@ export interface WordClarity {
    *
    * These carry no phoneme *names* — the provider does not supply them for `en-GB`, and
    * its phone counts follow an American inventory, so they cannot be index-aligned to a
-   * British lexicon. Use the timings to locate a region in the audio, nothing more.
+   * British transcription. Use the timings to locate a region in the audio, nothing more.
    */
   readonly phonemes: readonly PhonemeTiming[];
 }
