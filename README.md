@@ -157,7 +157,7 @@ The app runs on one hostname you own, for example `trainer.example.com`:
 
 ```
 trainer.example.com/api/*   →  API Worker      (apps/api, wrangler.jsonc)
-trainer.example.com/*       →  Pages project   (apps/web, wrangler.jsonc)
+trainer.example.com/*       →  Web Worker      (apps/web, wrangler.jsonc: static assets only)
 ```
 
 Page and API share one origin, so one Cloudflare Access application protects both. The
@@ -165,9 +165,9 @@ service worker can see the API, and no CORS is needed.
 
 **The app must sit behind [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/).**
 The API has no authentication of its own, because it is a single-user tool. It stores
-your voice recordings, and its routes are public in this repository. The Worker has
-`workers.dev` and preview URLs switched off, so the protected hostname is its only
-address. Its route and the Pages custom domain are bound in the dashboard, not in
+your voice recordings, and its routes are public in this repository. Both Workers
+have `workers.dev` and preview URLs switched off, so the protected hostname is their only
+address. The route and the custom domain are bound in the dashboard, not in
 `wrangler.jsonc`, so your domain never appears in this repository.
 
 ### One-time setup
@@ -202,29 +202,26 @@ The order below keeps the app unreachable until Access protects it. Run commands
    Each `secret put` prompts for its value, so the key never sits in a file or your shell
    history.
 5. **Access, before anything is reachable.** In Zero Trust, add a *self-hosted* Access
-   application. Give it your hostname (for example `trainer.example.com`) **and**
-   `accent-trainer-web.pages.dev` as its domains, with an *Allow* policy for your own
-   email. Then add two more applications on your hostname, each with a *Bypass* policy for
-   everyone: one for the path `/manifest.webmanifest` and one for `/icons/*`. Browsers can
-   fetch these without your session cookie, and without the bypass they would get the
-   login page and never offer to install the app. Neither path holds anything private.
-6. **Web app.** From `apps/web`:
-   ```bash
-   bunx wrangler pages project create accent-trainer-web --production-branch master
-   bun run deploy
-   ```
-   Then go to **Workers & Pages → accent-trainer-web → Custom domains** and add your
-   hostname, which creates its DNS record. Also go to **Settings → Enable access policy**
-   to cover preview deployments, which the application in step 5 does not.
+   application for your hostname (for example `trainer.example.com`), with an *Allow*
+   policy for your own email. Then add two more applications on your hostname, each with
+   a *Bypass* policy for everyone: one for the path `/manifest.webmanifest` and one for
+   `/icons/*`. Browsers can fetch these without your session cookie, and without the
+   bypass they would get the login page and never offer to install the app. Neither path
+   holds anything private.
+6. **Web app.** From `apps/web`, run `bun run deploy`. It builds the app and uploads it as
+   the `accent-trainer-web` Worker. Then go to **Workers & Pages → accent-trainer-web →
+   Settings → Domains & Routes → Add → Custom domain** and enter your hostname. Cloudflare
+   creates its DNS record and certificate.
 7. **API route.** Go to **Workers & Pages → accent-trainer-api → Settings → Domains &
    Routes → Add → Route**. Enter `trainer.example.com/api/*` (your hostname) and pick your
-   domain's zone. The route is bound there, not in `wrangler.jsonc`, so your domain stays
-   out of the repository, and later deploys leave it in place.
+   domain's zone. Cloudflare gives a route precedence over a custom domain on the same
+   hostname, so `/api/*` reaches the API and everything else reaches the web app. The
+   route is bound there, not in `wrangler.jsonc`, so your domain stays out of the
+   repository, and later deploys leave it in place.
 8. **Check.** In a private window:
-   - `https://trainer.example.com/` and `https://accent-trainer-web.pages.dev/` both ask
-     you to log in;
+   - `https://trainer.example.com/` asks you to log in;
    - after logging in, `https://trainer.example.com/api/drills` returns the drills as
-     JSON. That proves the Worker route wins over Pages on the same hostname.
+     JSON, and the app itself loads.
 
 Dashboard menu names change from time to time; if one is missing, search the dashboard
 for it.
@@ -237,11 +234,8 @@ cd apps/api && bun run db:migrate:remote   # first, if a change adds a migration
 cd apps/api && bun run deploy              # API
 ```
 
-The web deploy always goes to production (`--branch=master`), even when run from a
-feature branch. Without that flag, Pages would treat a feature branch as a preview.
-
-`bunx wrangler deploy --dry-run` in `apps/api` bundles the Worker and checks its bindings
-without uploading anything or needing a login.
+`bunx wrangler deploy --dry-run` in `apps/api` or `apps/web` packages the Worker and checks
+its bindings without uploading anything or needing a login.
 
 ## Project structure
 
