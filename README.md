@@ -168,9 +168,9 @@ the default `workers.dev` URL or a preview URL. See the Security section of
 apps/api/            Hono REST API on Cloudflare Workers
   src/routes/        HTTP handlers
   src/domain.ts      Types shared with the web app
-apps/web/            React PWA: recording, A/B comparison, progress, offline shell
   src/spike/         Throwaway engine evaluation — see spike/FINDINGS.md
   migrations/        D1 schema (schema only; content is seeded separately)
+apps/web/            React PWA: recording, A/B comparison, progress, offline shell
 content/drills.ts    The drill corpus, as typed data
 scripts/seed.ts      Loads the corpus into D1
 docs/specs/          Design documents

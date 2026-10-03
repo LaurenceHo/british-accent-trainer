@@ -79,9 +79,9 @@ touching scoring.
 **Do not use an `en-GB` score as a measure of RP-ness, and never label it as one in the
 UI.** It measures general intelligibility, which is a different question.
 
-**2. Index-aligning scores to a British lexicon is impossible.** Azure's phone counts
-follow the American inventory, so the arrays do not correspond. Use time alignment
-(`Offset`/`Duration`) or word-level scores instead.
+**2. Index-aligning scores to a British transcription is impossible.** Azure's phone counts
+follow the American inventory, so the arrays do not correspond. Timings (`Offset`/`Duration`)
+can locate a word in the audio, nothing more; word-level scores are clarity, not accent.
 
 **3. Automated RP feature detection is NOT viable on Azure. Do not attempt it.**
 

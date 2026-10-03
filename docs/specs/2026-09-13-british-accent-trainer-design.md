@@ -382,12 +382,12 @@ pool (see Testing Strategy); Bun's own runner will not provide a D1 binding.
 ```
 apps/api/                        → Cloudflare Worker (Hono) REST API
   src/index.ts                   → Worker entry, route mounting
-  src/types.ts                   → Shared domain interfaces
-  src/validation.ts              → Request validation (audio format, duration)
+  src/domain.ts                  → Types shared with the web app (import-free, lint-enforced)
+  src/types.ts                   → Worker bindings and server-only types
   src/routes/                    → drills, attempts, reference-audio, progress
   src/scoring/                   → provider.ts (interface) + azure.ts (adapter)
   src/tts/                       → azure.ts (en-GB neural TTS)
-  src/audio/                     → wav.ts (WAV header parsing and validation)
+  src/audio/                     → wav.ts (WAV parsing, and request validation: format, duration)
   src/azure-config.ts            → reads and validates Azure credentials
   migrations/                    → D1 SQL migrations
   test/                          → API tests
@@ -400,9 +400,10 @@ apps/web/                        → React + Vite PWA
   src/api/                       → client, hooks (TanStack Query), query-keys, query-client
   src/components/                → drill-screen, practice-panel, audio-clip, compare-panel
   src/components/ui/             → shadcn/ui components (copied in, editable, committed)
-  test/                          → Component and unit tests
   src/progress/                  → trend maths for the progress screen
   src/sw/                        → service worker, its routing rules, registration
+  src/lib/                       → small shared helpers (cn, percent, use-online)
+  test/                          → Component and unit tests
   scripts/                       → make-icons.ts, png.ts (icon generation)
   public/manifest.webmanifest    → PWA manifest
 
