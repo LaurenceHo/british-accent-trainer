@@ -31,10 +31,18 @@ const DRILL: Drill = {
 
 const TAKE = new ArrayBuffer(64);
 
+/**
+ * A reference-audio response. The body is bytes, not a `Blob`: under jsdom, `Blob` is
+ * jsdom's, which has no `stream()`, and older Node `fetch` implementations throw when
+ * handed one. The stub then rejects, the query retries after a second, and every test
+ * waiting on the audio times out — on CI only, where Node is older than locally.
+ */
+const referenceAudio = () => new Response(new Uint8Array([1, 2, 3]));
+
 /** Serves the reference audio (plus any extra routes) and renders the panel. */
 function renderPanel(extra: Routes = {}) {
   const fetch = fetchStub({
-    '/api/drills/w-bath/reference-audio': () => new Response(new Blob(['ref'])),
+    '/api/drills/w-bath/reference-audio': referenceAudio,
     ...extra,
   });
   vi.stubGlobal('fetch', fetch.stub);
@@ -237,7 +245,7 @@ describe('the reference recording', () => {
     let fail = false;
     const fetch = fetchStub({
       '/api/drills/w-bath/reference-audio': () =>
-        fail ? json({ error: 'down' }, 500) : new Response(new Blob(['ref'])),
+        fail ? json({ error: 'down' }, 500) : referenceAudio(),
     });
     vi.stubGlobal('fetch', fetch.stub);
     const { client } = renderWithClient(<PracticePanel drill={DRILL} />);
