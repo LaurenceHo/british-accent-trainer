@@ -65,7 +65,7 @@ Task 0  Repo, scaffold, test harness, Azure key
           │
           ├── Task 2  D1 schema + GET /api/drills ──┐
           │      │                                  │
-          │      └── Task 9  British IPA lexicon    │
+          │      └── Task 9  (dropped)              │
           │                                         │
           ├── Task 3  Audio capture → WAV ──────────┤
           │                                         │
@@ -117,7 +117,7 @@ Task 8. Do not begin Phase 1 until resolved with a human.
 
 - [x] Task 7: Reference `en-GB` TTS with R2 caching ✅
 - [x] Task 8: **Comparison UI** — reference vs attempt waveforms, synchronised playback (design: [spec](../specs/2026-09-13-british-accent-trainer-design.md#comparison-screen-task-8)) ✅
-- [ ] Task 9: Local British IPA lexicon
+- ~~Task 9: Local British IPA lexicon~~ — **dropped 2026-10-03.** It existed to put British symbols on Azure's phoneme scores, which the spike showed cannot be aligned (Rung 2 is dead). Its remaining job, target IPA beside each drill, is met by hand-written IPA in `content/drills.ts`, checked for non-rhotic transcription by `apps/api/test/content.test.ts`. Worth reviving only for learner-typed sentences, whose IPA cannot be written in advance.
 - [x] Task 10: Attempt audio storage and replay **(core — A/B comparison depends on it)** ✅
 
 **Checkpoint: Shadowing works** — the user can hear the reference, record, and compare the two. Feedback is honest about measuring clarity, not accent.
@@ -145,7 +145,7 @@ Task 8. Do not begin Phase 1 until resolved with a human.
 | Azure REST 30-second audio cap | Low | Enforced as request validation in Task 5 |
 | Live API calls inside the test suite (cost, flakiness) | Medium | Checked-in WAV fixture + captured response JSON; mock at the HTTP boundary |
 | Speechace RP claim is unverified | Medium | Originates from an AI-generated suggestion, not a primary source. Verify against Speechace docs or a trial key **before** committing to a swap |
-| Lexicon source is not IPA-native | Low | BEEP ships ASCII phones, needing a mapping layer. Task 9 selects the source before writing code |
+| ~~Lexicon source is not IPA-native~~ | **Moot** | Task 9 was dropped; no lexicon is imported |
 
 ---
 
@@ -153,8 +153,8 @@ Task 8. Do not begin Phase 1 until resolved with a human.
 
 Mostly sequential, but once the Engine Decision Gate clears:
 
-- **Tasks 2, 3, and 9 are independent** — schema/API, browser audio, and the lexicon share
-  no files and can run concurrently.
+- **Tasks 2 and 3 are independent** — schema/API and browser audio share no files and can
+  run concurrently. (Task 9, the lexicon, was independent too, before it was dropped.)
 - **Tasks 10 and 11 are independent** of each other, both depending only on Task 5.
 - **Task 4 must wait for Task 1** — it needs the real response shape and the captured fixture.
 - **Task 8 depends on Task 10** — comparison UI needs stored audio to compare.

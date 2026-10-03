@@ -44,7 +44,6 @@ Always `bun`, never `npm`/`yarn`/`pnpm`.
 apps/api/          Hono REST API on Cloudflare Workers
   src/routes/      HTTP handlers (drills, attempts, progress, reference-audio)
   src/scoring/     provider.ts (interface) + azure.ts (adapter)
-  src/lexicon/     British IPA lookup + phone-set mapping
   migrations/      D1 SQL — schema only, never seed data
   test/fixtures/   Checked-in WAV + captured API response JSON
 apps/web/          React + Vite PWA — shadcn/ui, Tailwind v4, Vitest + jsdom
@@ -112,12 +111,15 @@ reference implementation, **not as a shipping feature**.
 
 **4. Other standing rules:**
 
-- IPA symbols must come from the local British lexicon, never from the API response.
-- **Never render a phoneme symbol the engine did not actually score.** If lexicon/score
-  alignment lengths disagree, fall back to time-based highlighting.
-- **Never use CMUdict as the lexicon** — it is American and rhotic, encoding exactly the
-  pronunciations this app trains against. Verify any lexicon with *car*, *water*, *better*
-  carrying no /r/.
+- **The only IPA shown is each drill's `targetIpa`, hand-written in `content/drills.ts`** —
+  never symbols from the API response. There is no lexicon: Task 9 was dropped, since the
+  scores it would have labelled cannot be aligned (rule 2). `apps/api/test/content.test.ts`
+  checks every transcription is non-rhotic, so a new drill must pass it.
+- **Never render a phoneme symbol the engine did not actually score.** Mark words by time
+  (`Offset`/`Duration`) instead, as the comparison screen does.
+- **Never take IPA from CMUdict** — it is American and rhotic, encoding exactly the
+  pronunciations this app trains against. Any future lexicon must be checked with *car*,
+  *water* and *better* carrying no /r/.
 
 ## Gotchas
 

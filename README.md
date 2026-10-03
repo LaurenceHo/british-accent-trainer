@@ -5,8 +5,8 @@
 A Progressive Web App for practising **Received Pronunciation** — hear a native model,
 record yourself, and compare the two.
 
-> **Status: work in progress.** The API and drill corpus are built. The web app is not yet
-> started. See [Status](#status).
+> **Status:** the API, the drill corpus and the web app are built: practise, compare, track
+> progress, install as an app. See [Status](#status).
 
 ---
 
@@ -96,7 +96,7 @@ NURSE vowels.
 | API | TypeScript, [Hono](https://hono.dev) on [Cloudflare Workers](https://workers.cloudflare.com) |
 | Storage | Cloudflare D1 (SQLite) for drills and attempts, R2 for audio |
 | Speech | Azure AI Speech — `en-GB` neural TTS and pronunciation assessment, via REST |
-| Web | React + Vite PWA, shadcn/ui + Tailwind *(not yet built)* |
+| Web | React + Vite PWA, shadcn/ui + Tailwind, TanStack Query |
 | Tooling | Bun, Vitest with `@cloudflare/vitest-plugin`, ESLint |
 
 ## Getting started
@@ -123,7 +123,13 @@ cd apps/api
 bun run db:migrate     # apply schema to local D1
 bun run db:seed        # load the drill corpus
 cd ../..
-bun run dev            # http://127.0.0.1:8787
+bun run dev            # API on http://127.0.0.1:8787
+```
+
+In a second terminal, the web app, which forwards `/api` to the API:
+
+```bash
+bun run --filter web dev   # http://localhost:5173
 ```
 
 Verify:
@@ -161,6 +167,8 @@ the default `workers.dev` URL or a preview URL. See the Security section of
 ```
 apps/api/            Hono REST API on Cloudflare Workers
   src/routes/        HTTP handlers
+  src/domain.ts      Types shared with the web app
+apps/web/            React PWA: recording, A/B comparison, progress, offline shell
   src/spike/         Throwaway engine evaluation — see spike/FINDINGS.md
   migrations/        D1 schema (schema only; content is seeded separately)
 content/drills.ts    The drill corpus, as typed data
@@ -180,10 +188,13 @@ one-line diff and a wrong feature name is a compile error.
 | ✅ | Workers API scaffold, D1/R2 bindings, test harness |
 | ✅ | Engine evaluation — see [`spike/FINDINGS.md`](spike/FINDINGS.md) |
 | ✅ | Drill schema, corpus of 27 drills, `GET /api/drills` with filtering |
-| ⏳ | Scoring provider interface and Azure adapter |
-| ⏳ | Attempt submission and storage |
-| ⏳ | Web app: recording, reference playback, A/B comparison |
-| ⏳ | Progress tracking, PWA packaging |
+| ✅ | Scoring provider interface and Azure adapter, labelled as clarity |
+| ✅ | Attempt submission, scoring and audio storage |
+| ✅ | Web app: recording, reference playback, A/B waveform comparison |
+| ✅ | Progress per RP feature, replay of past attempts |
+| ✅ | Installable PWA that opens offline |
+| ⏳ | Deployment configuration and CI/CD |
+| ➖ | British pronunciation lexicon — dropped: drill IPA is hand-written and test-checked |
 
 The spike code under `apps/api/src/spike/` is deliberately throwaway. It includes a
 browser recorder at `/spike/recorder` that was used to validate the findings against real
