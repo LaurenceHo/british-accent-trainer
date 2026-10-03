@@ -1,5 +1,5 @@
 import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiError, fetchDrills, submitAttempt } from './client';
+import { ApiError, fetchDrills, fetchProgress, fetchRecentAttempts, submitAttempt } from './client';
 import { queryKeys } from './query-keys';
 
 /**
@@ -80,5 +80,32 @@ export function useAudioBytes(url: string | null, immutable = false) {
     staleTime: immutable ? Infinity : 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+  });
+}
+
+/**
+ * The learner's latest attempts, for replay. Invalidated by {@link useSubmitAttempt}.
+ *
+ * @param limit - How many to show.
+ */
+export function useRecentAttempts(limit: number) {
+  return useQuery({
+    queryKey: queryKeys.attempts.recent(limit),
+    queryFn: () => fetchRecentAttempts(limit),
+  });
+}
+
+/**
+ * Clarity progress per RP feature over the last `days` local days. Invalidated by
+ * {@link useSubmitAttempt}.
+ *
+ * @param days - Whole local days to cover, today included.
+ */
+export function useProgress(days: number) {
+  // getTimezoneOffset is minutes *west* of UTC; the API takes minutes east.
+  const tzOffsetMinutes = -new Date().getTimezoneOffset();
+  return useQuery({
+    queryKey: queryKeys.progress.window(days, tzOffsetMinutes),
+    queryFn: () => fetchProgress(days, tzOffsetMinutes),
   });
 }

@@ -116,15 +116,15 @@ Task 8. Do not begin Phase 1 until resolved with a human.
 ### Phase 2: Shadowing and Comparison
 
 - [x] Task 7: Reference `en-GB` TTS with R2 caching ✅
-- [ ] Task 8: **Comparison UI** — reference vs attempt waveforms, synchronised playback (design: [spec](../specs/2026-09-13-british-accent-trainer-design.md#comparison-screen-task-8))
+- [x] Task 8: **Comparison UI** — reference vs attempt waveforms, synchronised playback (design: [spec](../specs/2026-09-13-british-accent-trainer-design.md#comparison-screen-task-8)) ✅
 - [ ] Task 9: Local British IPA lexicon
-- [ ] Task 10: Attempt audio storage and replay **(core — A/B comparison depends on it)** — storage and `GET /api/attempts/:id/audio` done; replay in attempt history comes with the progress screen
+- [x] Task 10: Attempt audio storage and replay **(core — A/B comparison depends on it)** ✅
 
 **Checkpoint: Shadowing works** — the user can hear the reference, record, and compare the two. Feedback is honest about measuring clarity, not accent.
 
 ### Phase 3: Progress and Polish
 
-- [ ] Task 11: Progress history and trends — API done (`GET /api/progress`); progress screen pending
+- [x] Task 11: Progress history and trends ✅ (design: [spec](../specs/2026-09-13-british-accent-trainer-design.md#progress-screen-task-11))
 - [ ] Task 12: PWA, accessibility, and cross-browser hardening
 
 **Checkpoint: Complete** — all [success criteria](../specs/2026-09-13-british-accent-trainer-design.md#success-criteria) met.

@@ -11,9 +11,12 @@ export const queryKeys = {
   attempts: {
     all: ['attempts'] as const,
     forDrill: (drillId: string) => ['attempts', { drillId }] as const,
+    recent: (limit: number) => ['attempts', { limit }] as const,
   },
   progress: {
     all: ['progress'] as const,
+    window: (days: number, tzOffsetMinutes: number) =>
+      ['progress', { days, tzOffsetMinutes }] as const,
   },
   audio: {
     clip: (url: string) => ['audio', url] as const,

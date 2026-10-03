@@ -1,4 +1,4 @@
-import type { Attempt, Drill } from '@api/domain';
+import type { Attempt, Drill, ProgressResponse } from '@api/domain';
 
 /**
  * Typed calls to the Worker API.
@@ -79,4 +79,24 @@ export function referenceAudioUrl(drillId: string): string {
 /** URL of a stored attempt's recording. */
 export function attemptAudioUrl(attemptId: string): string {
   return `/api/attempts/${encodeURIComponent(attemptId)}/audio`;
+}
+
+/**
+ * The most recent attempts across every drill, newest first.
+ *
+ * @param limit - How many to return; the API caps this at 200.
+ */
+export async function fetchRecentAttempts(limit: number): Promise<Attempt[]> {
+  return (await request<{ attempts: Attempt[] }>(`/api/attempts?limit=${limit}`)).attempts;
+}
+
+/**
+ * Clarity progress per RP feature.
+ *
+ * @param days - Whole local days to cover, today included.
+ * @param tzOffsetMinutes - The learner's offset in minutes east of UTC, so days break at
+ *   their local midnight. Note the sign: `Date#getTimezoneOffset` returns minutes *west*.
+ */
+export async function fetchProgress(days: number, tzOffsetMinutes: number): Promise<ProgressResponse> {
+  return request<ProgressResponse>(`/api/progress?days=${days}&tzOffsetMinutes=${tzOffsetMinutes}`);
 }

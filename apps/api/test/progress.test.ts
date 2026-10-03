@@ -1,9 +1,8 @@
 import { env } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import app from '../src/index';
-import { RP_FEATURES } from '../src/domain';
+import { RP_FEATURES, type ProgressResponse } from '../src/domain';
 import { windowStart } from '../src/routes/progress';
-import type { ProgressResponse } from '../src/types';
 import { seedDrill } from './route-helpers';
 
 /**

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { RP_FEATURE_LABELS, RP_FEATURES } from '../domain';
-import type { DailyProgress, Env, ProgressResponse } from '../types';
+import { RP_FEATURE_LABELS, RP_FEATURES, type DailyProgress, type ProgressResponse } from '../domain';
+import type { Env } from '../types';
 
 /**
  * Practice progress, grouped by RP feature.
