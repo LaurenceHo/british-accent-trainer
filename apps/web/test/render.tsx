@@ -1,18 +1,22 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { render, type RenderResult } from '@testing-library/react';
-import type { ReactElement } from 'react';
+import { StrictMode, type ReactElement } from 'react';
+import { createQueryClient } from '@/api/query-client';
 
 /**
- * Renders inside a fresh QueryClient.
+ * Renders inside StrictMode and a fresh copy of the application's QueryClient.
  *
- * A new client per test keeps cached data from leaking between tests. Retries are off so a
- * failed request surfaces immediately instead of waiting out the default backoff.
+ * The same factory as production, so tests see the real retry and refetch behaviour. A new
+ * client per test keeps cached data from leaking between tests. StrictMode double-mounts
+ * effects in development, which is exactly what exposes object-URL and cleanup bugs.
  */
 export function renderWithClient(ui: ReactElement): RenderResult & { client: QueryClient } {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
-  const result = render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  const client = createQueryClient();
+  const result = render(
+    <StrictMode>
+      <QueryClientProvider client={client}>{ui}</QueryClientProvider>
+    </StrictMode>,
+  );
   return { ...result, client };
 }
 

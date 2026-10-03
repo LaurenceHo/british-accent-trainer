@@ -1,5 +1,5 @@
 import { DIFFICULTY_LABELS, RP_FEATURE_LABELS, type Drill } from '@api/domain';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { ApiError, referenceAudioUrl, type SubmittedAttempt } from '@/api/client';
 import { useAudioBlob, useSubmitAttempt } from '@/api/hooks';
 import {
@@ -53,9 +53,25 @@ export function PracticePanel({ drill }: PracticePanelProps) {
 
   const busy = state.status === 'requesting' || state.status === 'processing' || submit.isPending;
 
+  // Resubmitting audio the recogniser could not hear spends another transcription on a
+  // result already known. Offer a new take instead.
+  const unheard = submit.error instanceof ApiError && submit.error.code === 'not-recognised';
+  const canSubmit = take !== null && !submit.data && !unheard;
+
+  const recordButtonRef = useRef<HTMLButtonElement>(null);
+
+  // A new take supersedes the previous result. Without this the old score stayed on screen
+  // beside a recording it never scored, and the new take could not be submitted.
+  const record = () => {
+    submit.reset();
+    void recorder.start();
+  };
+
   const startAgain = () => {
     submit.reset();
     recorder.reset();
+    // The result section, which held focus, is about to unmount.
+    recordButtonRef.current?.focus();
   };
 
   return (
@@ -79,7 +95,12 @@ export function PracticePanel({ drill }: PracticePanelProps) {
         label="Native reference"
         blob={reference.data ?? null}
         loading={reference.isPending}
-        error={reference.isError ? 'The reference recording is unavailable right now.' : null}
+        // Only when nothing is cached: a failed background refetch must not hide playable audio.
+        error={
+          reference.isError && !reference.data
+            ? 'The reference recording is unavailable right now.'
+            : null
+        }
       />
 
       <section className="space-y-3" aria-labelledby="record-heading">
@@ -91,11 +112,11 @@ export function PracticePanel({ drill }: PracticePanelProps) {
           {state.status === 'recording' ? (
             <Button onClick={recorder.stop}>Stop recording</Button>
           ) : (
-            <Button onClick={() => void recorder.start()} disabled={busy}>
+            <Button ref={recordButtonRef} onClick={record} disabled={busy}>
               {take ? 'Record again' : 'Record'}
             </Button>
           )}
-          {take && !submit.data && (
+          {canSubmit && (
             <Button
               variant="secondary"
               disabled={busy}
@@ -125,7 +146,10 @@ export function PracticePanel({ drill }: PracticePanelProps) {
         <Alert variant="destructive">
           <AlertTitle>Could not check this recording</AlertTitle>
           <AlertDescription>
-            {submit.error instanceof ApiError ? submit.error.message : 'Please try again.'}
+            {submit.error instanceof ApiError
+              ? submit.error.message
+              : 'Could not reach the server. Check your connection and try again.'}
+            {unheard && ' Record a new take to try again.'}
           </AlertDescription>
         </Alert>
       )}
@@ -149,9 +173,23 @@ function ClarityResult({
   readonly result: SubmittedAttempt;
   readonly onTryAgain: () => void;
 }) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  // The "Check clarity" button that held focus unmounts as this appears, which would drop
+  // keyboard focus to the page body and leave a screen reader announcing nothing. Moving
+  // focus here lands the learner on the result and reads it out.
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, []);
+
   return (
     <section className="space-y-2 rounded-lg border p-4" aria-labelledby="result-heading">
-      <h3 id="result-heading" className="text-sm font-medium">
+      <h3
+        id="result-heading"
+        ref={headingRef}
+        tabIndex={-1}
+        className="text-sm font-medium focus:outline-none"
+      >
         Clarity
       </h3>
       <p className="text-3xl font-semibold" aria-describedby="clarity-explainer">

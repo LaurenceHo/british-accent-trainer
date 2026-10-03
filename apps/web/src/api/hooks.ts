@@ -1,5 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchDrills, submitAttempt } from './client';
+import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ApiError, fetchDrills, submitAttempt } from './client';
 import { queryKeys } from './query-keys';
 
 /**
@@ -51,19 +51,32 @@ export function useSubmitAttempt() {
  * (206) responses for media elements and gets none from these endpoints.
  *
  * @param url - A reference or attempt audio URL, or null to fetch nothing.
- * @param immutable - Attempt audio never changes once written, so it never refetches.
- *   Reference audio can change when a drill is edited, so it revalidates; its ETag makes
- *   an unchanged recording a cheap 304.
+ * @param immutable - Attempt audio never changes once written, so it never goes stale.
+ *   Reference audio can change when a drill is edited, so it goes stale after a few
+ *   minutes and is revalidated on the next visit; its ETag makes that a cheap 304.
+ *
+ * Never refetched on window focus or reconnect. Every refetch yields a new Blob object,
+ * and a new Blob reloads the player: switching tabs and back would restart the reference
+ * from zero mid-listen.
  */
 export function useAudioBlob(url: string | null, immutable = false) {
   return useQuery({
-    queryKey: queryKeys.audio.clip(url ?? ''),
-    queryFn: async () => {
-      const response = await fetch(url ?? '');
-      if (!response.ok) throw new Error(`Audio unavailable (${response.status})`);
-      return response.blob();
-    },
-    enabled: url !== null,
-    staleTime: immutable ? Infinity : 0,
+    queryKey: queryKeys.audio.clip(url ?? 'none'),
+    // skipToken, not `enabled: false`: refetch() ignores `enabled`, and would then fetch
+    // the placeholder URL.
+    queryFn:
+      url === null
+        ? skipToken
+        : async () => {
+            const response = await fetch(url);
+            // An ApiError, so shouldRetry treats it as the server's answer and does not retry.
+            if (!response.ok) {
+              throw new ApiError(`Audio unavailable (${response.status})`, response.status);
+            }
+            return response.blob();
+          },
+    staleTime: immutable ? Infinity : 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }

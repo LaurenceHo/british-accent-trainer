@@ -34,6 +34,8 @@ export function AudioClip({ label, blob, loading = false, error = null }: AudioC
     element.src = url;
     return () => {
       element.removeAttribute('src');
+      // Removing src alone leaves the element holding the old resource; load() releases it.
+      element.load();
       URL.revokeObjectURL(url);
     };
   }, [blob]);

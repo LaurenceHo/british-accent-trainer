@@ -21,6 +21,22 @@ export default tseslint.config(
     ...reactHooks.configs.flat['recommended-latest'],
   },
   {
+    // domain.ts is bundled into the browser through the web app's @api/domain alias. Any
+    // import here would drag server code into the client, so the file must stay import-free.
+    files: ['apps/api/src/domain.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...['ImportDeclaration', 'ExportNamedDeclaration[source]', 'ExportAllDeclaration'].map(
+          (selector) => ({
+            selector,
+            message: 'domain.ts is bundled into the browser and must not import anything.',
+          }),
+        ),
+      ],
+    },
+  },
+  {
     rules: {
       // The project forbids `any` outright — every boundary gets an explicit type.
       '@typescript-eslint/no-explicit-any': 'error',

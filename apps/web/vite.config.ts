@@ -8,9 +8,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, './src'),
-      // Shared with the Worker so client and server cannot drift. Only `domain.ts` is
-      // imported: it is plain TypeScript with no Workers-specific types or runtime.
-      '@api': path.resolve(import.meta.dirname, '../api/src'),
+      // Shared with the Worker so client and server cannot drift. Deliberately this one
+      // file, not the API's whole src tree: domain.ts has no imports and is enforced import-
+      // free by lint, so nothing server-side can be pulled into the browser bundle.
+      '@api/domain': path.resolve(import.meta.dirname, '../api/src/domain.ts'),
     },
   },
   server: {
