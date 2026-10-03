@@ -216,6 +216,49 @@ intelligibility ("this word was unclear"), never accent.
 
 ---
 
+## Comparison screen (Task 8)
+
+Once the learner has a take, the drill screen shows it against the native reference.
+Decisions, recorded here so they are not relitigated in review:
+
+- **Waveforms are computed from the WAV bytes, not decoded by the browser.** Both clips
+  are 16 kHz, 16-bit mono PCM — the reference is validated by `assertScorableWav` before
+  it is cached, and the take is produced by our own encoder — so the samples are read
+  straight from the `data` chunk. No `AudioContext`, which keeps the code testable under
+  jsdom and identical across browsers. The parser walks the RIFF chunk list rather than
+  assuming a 44-byte header, mirroring `apps/api/src/audio/wav.ts`.
+- **Drawn as SVG, not canvas.** Each waveform is `role="img"` with an accessible name that
+  states its duration, and SVG renders under jsdom so the drawing is testable.
+- **One shared time axis.** Both waveforms are scaled to the longer clip's duration, so a
+  take that is slower than the reference is visibly longer, not stretched to fit.
+- **A/B means one shared playhead.** The learner chooses which clip to hear — reference or
+  take — with a native radio group. Switching keeps the playback position, clamped to the
+  other clip's length, and pauses the clip that is no longer selected. Playing both at once
+  is not offered: overlapping speech is harder to compare, not easier.
+  - If the position is past the end of the clip being switched to, playback stops there
+    rather than carrying on, because `play()` on a finished clip restarts it from zero.
+  - Play is disabled while the selected clip has no audio. A browser accepts `play()` on
+    an empty element and fires `play`, so the button would otherwise show "Pause" over
+    silence. Only the reference can be missing; if it failed, that is said, not "Loading…".
+  - The seek on switching is repeated once metadata loads, and the elements use
+    `preload="auto"`: WebKit has dropped seeks made before metadata, and iOS ignores
+    `preload`, so the first switch could otherwise start from zero.
+- **Unclear words are marked per word, on the take only.** A word's span runs from its
+  first phoneme's `offset` to its last phoneme's `offset + duration`, converted from
+  100-nanosecond ticks to seconds (÷ 10⁷). Those offsets are in the take's time base and
+  mean nothing on the reference, so nothing is drawn there. Words with no phoneme timings
+  are listed but not placed. **No phoneme or IPA symbol is ever drawn on a marker** — the
+  engine's phones follow the American inventory (see Engine Capability Constraints).
+- **"Unclear" means a word accuracy below 60.** That is the boundary Azure itself uses
+  when flagging a word as mispronounced. It is a clarity cue and is labelled "unclear",
+  never "wrong", "error" or "mispronounced".
+- **Not by colour alone.** Each marker is hatched and carries the word as text, and the
+  unclear words are also listed in plain text beneath the waveforms.
+- **If a clip cannot be parsed, its waveform is replaced by a short message** and playback
+  still works — the waveform is an aid, the audio is the point.
+
+---
+
 ## Tech Stack
 
 | Concern | Choice | Rationale |
@@ -279,11 +322,9 @@ apps/api/                        → Cloudflare Worker (Hono) REST API
 
 apps/web/                        → React + Vite PWA
   src/main.tsx                   → App entry
-  src/audio/                     → recorder.ts, wav-encoder.ts
-  src/screens/                   → DrillScreen, ProgressScreen
-  src/hooks/                     → useDrills, useSubmitAttempt, useProgress
-  src/api/queryKeys.ts           → Centralised query-key factory
-  src/components/                → ReferencePlayer, PhonemeFeedback, Waveform
+  src/audio/                     → use-recorder, to-wav, wav-encoder, wav-reader, waveform
+  src/api/                       → client, hooks (TanStack Query), query-keys, query-client
+  src/components/                → drill-screen, practice-panel, audio-clip, compare-panel
   src/components/ui/             → shadcn/ui components (copied in, editable, committed)
   src/scoring/align.ts           → Score ↔ IPA alignment
   test/                          → Component and unit tests

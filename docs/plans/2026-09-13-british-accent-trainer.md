@@ -105,26 +105,26 @@ Task 8. Do not begin Phase 1 until resolved with a human.
 
 ### Phase 1: First Vertical Slice — record one drill and get a score
 
-- [ ] Task 2: D1 schema, drill seed data, and `GET /api/drills`
-- [ ] Task 3: Browser audio capture → 16 kHz mono WAV
-- [ ] Task 4: Scoring provider interface + Azure adapter
-- [ ] Task 5: `POST /api/attempts` scoring endpoint
-- [ ] Task 6: Drill screen — record, submit, see a score
+- [x] Task 2: D1 schema, drill seed data, and `GET /api/drills` ✅
+- [x] Task 3: Browser audio capture → 16 kHz mono WAV ✅
+- [x] Task 4: Scoring provider interface + Azure adapter ✅
+- [x] Task 5: `POST /api/attempts` scoring endpoint ✅
+- [x] Task 6: Drill screen — record, submit, see a score ✅
 
 **Checkpoint: End-to-End Flow** — the loop works in a browser.
 
 ### Phase 2: Shadowing and Comparison
 
-- [ ] Task 7: Reference `en-GB` TTS with R2 caching
-- [ ] Task 8: **Comparison UI** — reference vs attempt waveforms, synchronised playback
+- [x] Task 7: Reference `en-GB` TTS with R2 caching ✅
+- [ ] Task 8: **Comparison UI** — reference vs attempt waveforms, synchronised playback (design: [spec](../specs/2026-09-13-british-accent-trainer-design.md#comparison-screen-task-8))
 - [ ] Task 9: Local British IPA lexicon
-- [ ] Task 10: Attempt audio storage and replay **(core — A/B comparison depends on it)**
+- [ ] Task 10: Attempt audio storage and replay **(core — A/B comparison depends on it)** — storage and `GET /api/attempts/:id/audio` done; replay in attempt history comes with the progress screen
 
 **Checkpoint: Shadowing works** — the user can hear the reference, record, and compare the two. Feedback is honest about measuring clarity, not accent.
 
 ### Phase 3: Progress and Polish
 
-- [ ] Task 11: Progress history and trends
+- [ ] Task 11: Progress history and trends — API done (`GET /api/progress`); progress screen pending
 - [ ] Task 12: PWA, accessibility, and cross-browser hardening
 
 **Checkpoint: Complete** — all [success criteria](../specs/2026-09-13-british-accent-trainer-design.md#success-criteria) met.
