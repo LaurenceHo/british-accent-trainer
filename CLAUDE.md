@@ -34,6 +34,9 @@ bun run --filter api test -- path/to.test.ts  # A single test file
 
 cd apps/api && bunx wrangler dev              # Worker with local D1/R2 simulation
 cd apps/api && bun run db:migrate             # Apply D1 migrations locally
+cd apps/api && bun run db:migrate:remote      # ...and to the deployed database
+cd apps/api && bun run deploy                 # Deploy the API Worker
+cd apps/web && bun run deploy                 # Build and deploy the web app to Pages
 ```
 
 Always `bun`, never `npm`/`yarn`/`pnpm`.
@@ -155,6 +158,10 @@ reference implementation, **not as a shipping feature**.
   vitest 5 breaks it.
 - **D1 needs the Workers pool.** API tests run under `@cloudflare/vitest-plugin` because
   Bun's own test runner cannot provide a D1 binding.
+- **Never declare the route or custom domain in `wrangler.jsonc`.** They name the owner's
+  domain, and this repository is public. They are bound once in the Cloudflare dashboard,
+  and `wrangler deploy` leaves them in place. Keep `workers_dev` and `preview_urls` false:
+  each would be an address outside Cloudflare Access. See README → Deploying.
 - **Tailwind v4 has no `tailwind.config.js`.** It is the `@tailwindcss/vite` plugin plus `@import
   "tailwindcss"` in `src/index.css`; theme tokens live in that CSS file. Tutorials written for
   v3 will tell you otherwise.

@@ -153,14 +153,79 @@ no Azure credentials, and the same three commands run in CI on every pull reques
 
 ## Deploying
 
-**Put the app behind [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/)
-before deploying it.** The API has no authentication of its own — it is a single-user
-tool — and it stores your voice recordings. Without Access, anyone who knows the routes
-(and they are in this repository) could list and download every recording.
+The app runs on one hostname you own, for example `trainer.example.com`:
 
-Make sure the Worker is not *also* reachable on an address Access does not cover, such as
-the default `workers.dev` URL or a preview URL. See the Security section of
-[the design spec](docs/specs/2026-09-13-british-accent-trainer-design.md#security).
+```
+trainer.example.com/api/*   →  API Worker      (apps/api, wrangler.jsonc)
+trainer.example.com/*       →  Pages project   (apps/web, wrangler.jsonc)
+```
+
+Page and API share one origin, so one Cloudflare Access application protects both. The
+service worker can see the API, and no CORS is needed.
+
+**The app must sit behind [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/).**
+The API has no authentication of its own, because it is a single-user tool. It stores
+your voice recordings, and its routes are public in this repository. The Worker has
+`workers.dev` and preview URLs switched off, so the protected hostname is its only
+address. Its route and the Pages custom domain are bound in the dashboard, not in
+`wrangler.jsonc`, so your domain never appears in this repository.
+
+### One-time setup
+
+You need a domain on Cloudflare, and R2 enabled on the account (Dashboard → R2). Run
+the commands from `apps/api` unless noted.
+
+1. **Log in:** `bunx wrangler login`
+2. **Database:** `bunx wrangler d1 create accent-trainer`. Paste the `database_id` it
+   prints into `apps/api/wrangler.jsonc`, replacing the zeros, and commit it. The id is
+   not a secret. Then:
+   ```bash
+   bun run db:migrate:remote   # create the tables
+   bun run db:seed:remote      # load the drills; safe to rerun after editing content/
+   ```
+3. **Audio bucket:** `bunx wrangler r2 bucket create accent-trainer-audio`
+4. **Web app.** From `apps/web`:
+   ```bash
+   bunx wrangler pages project create accent-trainer-web --production-branch master
+   bun run deploy
+   ```
+   Then, in the dashboard, go to **Workers & Pages → accent-trainer-web → Custom
+   domains** and add your hostname. This creates its DNS record.
+5. **API.** Set the Azure secrets, then deploy:
+   ```bash
+   bunx wrangler secret put AZURE_SPEECH_KEY
+   bunx wrangler secret put AZURE_SPEECH_REGION
+   bun run deploy
+   ```
+   Each `secret put` prompts for its value, so the key never sits in a file or your shell
+   history. Then, in the dashboard, go to **Workers & Pages → accent-trainer-api → Settings
+   → Domains & Routes → Add → Route**. Enter `trainer.example.com/api/*` (your hostname)
+   and pick your domain's zone. The route is bound there, not in `wrangler.jsonc`, so your
+   domain stays out of the repository, and later deploys leave it in place. After your
+   first redeploy, check the route is still listed.
+6. **Access.** Go to **Zero Trust → Access → Applications**, add a *self-hosted*
+   application for your hostname, and give it an *Allow* policy for your own email.
+   One-time PIN login works with no identity provider. Then add two more applications on
+   the same hostname with a *Bypass* policy for everyone: one for the path
+   `/manifest.webmanifest` and one for `/icons/*`. Browsers can fetch these without your
+   session cookie, and without the bypass they would get the login page and never offer
+   to install the app. Neither path holds anything private.
+7. **The `pages.dev` address.** Pages also serves the site at
+   `accent-trainer-web.pages.dev`. It holds only the static app shell (`/api` does not
+   exist there), but to close it anyway, use **Pages → Settings → Access policy**.
+8. **Check.** In a private window, `https://trainer.example.com/api/attempts` should ask
+   you to log in.
+
+### Updating
+
+```bash
+cd apps/web && bun run deploy              # web
+cd apps/api && bun run db:migrate:remote   # first, if a change adds a migration
+cd apps/api && bun run deploy              # API
+```
+
+`bunx wrangler deploy --dry-run` in `apps/api` bundles the Worker and checks its bindings
+without uploading anything or needing a login.
 
 ## Project structure
 
