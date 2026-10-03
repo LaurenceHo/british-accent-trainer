@@ -270,7 +270,8 @@ apps/api/                        → Cloudflare Worker (Hono) REST API
   src/scoring/                   → provider.ts (interface) + azure.ts (adapter)
   src/lexicon/                   → lookup.ts, phone-map.ts
   src/tts/                       → azure.ts (en-GB neural TTS)
-  src/storage/                   → r2.ts (attempt audio)
+  src/audio/                     → wav.ts (WAV header parsing and validation)
+  src/azure-config.ts            → reads and validates Azure credentials
   migrations/                    → D1 SQL migrations
   test/                          → API tests
   test/fixtures/                 → Checked-in WAV + captured response JSON
@@ -400,6 +401,37 @@ The standing bar every task clears, on top of its own acceptance criteria:
   **unknown**, not a negative
 - Use Python
 - Add AI attribution to a commit — no co-author trailer, no tool name
+
+---
+
+## Security
+
+**Decision (2026-10-03): the deployed app sits behind Cloudflare Access.** The API has no
+authentication of its own, by design — it is a single-user tool with no accounts. That was
+acceptable while it held only drills and scores. It stopped being acceptable once it
+stored **voice recordings**, which are personal, biometric-adjacent data:
+`GET /api/attempts` lists every attempt id, and `GET /api/attempts/:id/audio` returns the
+recording. The repository is public, so the routes are known to anyone.
+
+Cloudflare Access puts a login (one-time PIN to the owner's email, or an identity
+provider) in front of the whole hostname, with no application code and no secret to embed
+in the PWA. It is free at this scale.
+
+**This is a deploy prerequisite, not an option.** Before the first deploy:
+
+- Create an Access application covering the hostname the Worker is served on.
+- Make sure the Worker is **not also reachable on an unprotected address**. Access
+  protects a hostname; a second route, the default `workers.dev` URL, or a preview URL
+  that is not covered by the same policy would bypass the login entirely. Disable any that
+  are not protected.
+- Verify from a private browser window that `/api/attempts` demands a login.
+
+Two related notes for later work:
+
+- `Cache-Control: private` on attempt audio stops shared caches storing it. It is **not**
+  access control, and the code says so where it is set.
+- Attempt audio is served `immutable`. A "delete my recordings" feature, if added, must
+  also purge client-side caches, including the PWA service worker's.
 
 ---
 

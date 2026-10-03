@@ -109,6 +109,33 @@ function toWordScores(assessment: ClarityAssessment): WordScore[] {
   }));
 }
 
+/**
+ * Stores the submitted recording so it can be replayed against the reference later.
+ *
+ * Runs after scoring succeeds, so a rejected or unrecognised recording never occupies
+ * storage. A storage failure does not fail the request: the score has already been paid
+ * for, and the learner still has the recording in their browser for this session. The
+ * attempt is saved with no audio and the failure is logged.
+ *
+ * The key is derived from the server-generated attempt id, never from client input.
+ *
+ * @returns The R2 key, or `null` when the write failed.
+ */
+async function storeAttemptAudio(
+  bucket: R2Bucket,
+  attemptId: string,
+  audio: ArrayBuffer,
+): Promise<string | null> {
+  const key = `attempts/${attemptId}.wav`;
+  try {
+    await bucket.put(key, audio, { httpMetadata: { contentType: 'audio/wav' } });
+    return key;
+  } catch (error) {
+    console.error(`attempt ${attemptId}: audio not stored`, error);
+    return null;
+  }
+}
+
 /** Maps a scoring failure onto an HTTP status the client can act on. */
 function statusFor(error: ScoringError): 400 | 502 | 503 {
   if (error.code === 'not-recognised') return 400;
@@ -146,6 +173,14 @@ attempts.post(
       return c.json({ error: 'Scoring is not configured.' }, 503);
     }
 
+    // Checked up front, before any API call is spent. A missing binding is a deploy error,
+    // not a transient one: if it reached storeAttemptAudio it would be swallowed like an R2
+    // blip, and every submission would return 201 with replay silently dead.
+    if (!c.env.AUDIO) {
+      console.error('AUDIO R2 binding is missing');
+      return c.json({ error: 'Recording storage is not configured.' }, 503);
+    }
+
     const drill = await findDrill(c.env.DB, drillId);
     if (!drill) return c.json({ error: 'drill not found' }, 404);
 
@@ -175,8 +210,11 @@ attempts.post(
       throw error;
     }
 
+    const id = crypto.randomUUID();
+    const audioKey = await storeAttemptAudio(c.env.AUDIO, id, audio);
+
     const attempt: Attempt = {
-      id: crypto.randomUUID(),
+      id,
       drillId: drill.id,
       createdAt: new Date().toISOString(),
       accuracyScore: assessment.accuracy,
@@ -185,30 +223,49 @@ attempts.post(
       pronScore: assessment.overall,
       wordScores: toWordScores(assessment),
       featureFindings: [],
-      audioKey: null,
+      audioKey,
     };
 
-    await c.env.DB.prepare(
-      `INSERT INTO attempts
-       (id, drill_id, created_at, accuracy_score, fluency_score, completeness_score,
-        pron_score, word_scores, feature_verdicts, audio_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        attempt.id,
-        attempt.drillId,
-        attempt.createdAt,
-        attempt.accuracyScore,
-        attempt.fluencyScore,
-        attempt.completenessScore,
-        attempt.pronScore,
-        JSON.stringify(attempt.wordScores),
-        JSON.stringify(attempt.featureFindings),
-        attempt.audioKey,
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO attempts
+         (id, drill_id, created_at, accuracy_score, fluency_score, completeness_score,
+          pron_score, word_scores, feature_verdicts, audio_key)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run();
+        .bind(
+          attempt.id,
+          attempt.drillId,
+          attempt.createdAt,
+          attempt.accuracyScore,
+          attempt.fluencyScore,
+          attempt.completenessScore,
+          attempt.pronScore,
+          JSON.stringify(attempt.wordScores),
+          JSON.stringify(attempt.featureFindings),
+          attempt.audioKey,
+        )
+        .run();
+    } catch (error) {
+      // Without a row the audio is unreachable through the API: voice data with no handle,
+      // which no future "delete my recordings" feature could ever find. Remove it, then fail.
+      if (audioKey) {
+        await c.env.AUDIO.delete(audioKey).catch((cleanup: unknown) =>
+          console.error(`attempt ${id}: orphaned audio not removed`, cleanup),
+        );
+      }
+      throw error;
+    }
 
-    return c.json({ attempt, recognisedText: assessment.recognisedText }, 201);
+    return c.json(
+      {
+        attempt,
+        recognisedText: assessment.recognisedText,
+        // Lets the client warn that this attempt will not be replayable later.
+        audioStored: audioKey !== null,
+      },
+      201,
+    );
   },
 );
 
@@ -240,6 +297,39 @@ attempts.get('/', async (c) => {
     .all<AttemptRow>();
 
   return c.json({ attempts: results.map(toAttempt) });
+});
+
+/**
+ * Streams the learner's recording for an attempt, for replay against the reference.
+ *
+ * Attempt audio never changes once written — the attempt id is a fresh UUID — so it is
+ * cacheable indefinitely.
+ *
+ * `private` only stops shared caches from storing it. It is **not** access control: this
+ * route is unauthenticated, and the list endpoint hands out every attempt id. Deployments
+ * must sit behind Cloudflare Access — see the spec's Security section. If a "delete
+ * recording" feature is ever added, it must also purge client-side caches, since
+ * `immutable` lets the browser keep serving the audio for up to a year.
+ */
+attempts.get('/:id/audio', async (c) => {
+  const row = await c.env.DB.prepare('SELECT audio_key FROM attempts WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<{ audio_key: string | null }>();
+
+  if (!row) return c.json({ error: 'attempt not found' }, 404);
+  if (!row.audio_key) return c.json({ error: 'no audio was stored for this attempt' }, 404);
+
+  const object = await c.env.AUDIO.get(row.audio_key);
+  if (!object) return c.json({ error: 'audio is no longer available' }, 404);
+
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': 'audio/wav',
+      'Cache-Control': 'private, max-age=31536000, immutable',
+      // Only the WAV header was validated; the rest is arbitrary uploaded bytes.
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
 });
 
 /** Fetches one attempt. */

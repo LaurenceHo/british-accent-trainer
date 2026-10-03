@@ -145,6 +145,17 @@ The test suite mocks at the HTTP boundary and never calls the live Azure API —
 no Azure credentials, and the same three commands run in CI on every pull request
 (`.github/workflows/ci.yml`).
 
+## Deploying
+
+**Put the app behind [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/)
+before deploying it.** The API has no authentication of its own — it is a single-user
+tool — and it stores your voice recordings. Without Access, anyone who knows the routes
+(and they are in this repository) could list and download every recording.
+
+Make sure the Worker is not *also* reachable on an address Access does not cover, such as
+the default `workers.dev` URL or a preview URL. See the Security section of
+[the design spec](docs/specs/2026-09-13-british-accent-trainer-design.md#security).
+
 ## Project structure
 
 ```
