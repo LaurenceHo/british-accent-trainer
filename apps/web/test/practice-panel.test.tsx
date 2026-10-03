@@ -4,6 +4,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Recorder, RecorderState } from '@/audio/use-recorder';
+import { encodeWav } from '@/audio/wav-encoder';
 import { PracticePanel } from '@/components/practice-panel';
 import { fetchStub, json, renderWithClient, type Routes } from './render';
 
@@ -46,8 +47,8 @@ function renderPanel(extra: Routes = {}) {
     ...extra,
   });
   vi.stubGlobal('fetch', fetch.stub);
-  renderWithClient(<PracticePanel drill={DRILL} />);
-  return fetch;
+  const { container } = renderWithClient(<PracticePanel drill={DRILL} />);
+  return { ...fetch, container };
 }
 
 /** Renders the panel holding a finished take, and submits it to be answered by `response`. */
@@ -257,5 +258,43 @@ describe('the reference recording', () => {
 
     expect(screen.getByLabelText('Native reference')).toBeInTheDocument();
     expect(screen.queryByText(/unavailable right now/)).not.toBeInTheDocument();
+  });
+});
+
+describe('comparing a take with the reference', () => {
+  /** A real 1 s WAV, so the take's waveform is drawn. */
+  const wavTake = () => encodeWav(new Float32Array(16_000).fill(0.1), 16_000);
+  const bathUnclear = {
+    wordScores: [{ word: 'bath', score: 30, phonemes: [{ score: 30, offset: 0, duration: 5_000_000 }] }],
+  };
+
+  it('replaces the standalone reference player with the comparison once there is a take', () => {
+    recorderState = { status: 'done', wav: wavTake() };
+    const { container } = renderPanel();
+
+    expect(screen.getByRole('heading', { name: 'Compare' })).toBeInTheDocument();
+    // Two reference players could play over each other.
+    expect(container.querySelector('audio[aria-label="Native reference"]')).toBeNull();
+  });
+
+  it('marks unclear words once the take is scored', async () => {
+    recorderState = { status: 'done', wav: wavTake() };
+    renderPanel({ '/api/attempts': scored({ attempt: { id: 'a1', drillId: 'w-bath', accuracyScore: 64, ...bathUnclear } }) });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Check clarity' }));
+
+    expect(await screen.findByTestId('unclear-marker')).toHaveTextContent('bath');
+  });
+
+  it('drops the old markers when a new take is recorded', async () => {
+    recorderState = { status: 'done', wav: wavTake() };
+    renderPanel({ '/api/attempts': scored({ attempt: { id: 'a1', drillId: 'w-bath', accuracyScore: 64, ...bathUnclear } }) });
+    await userEvent.click(screen.getByRole('button', { name: 'Check clarity' }));
+    await screen.findByTestId('unclear-marker');
+
+    recorderState = { status: 'done', wav: wavTake() };
+    await userEvent.click(screen.getByRole('button', { name: 'Record again' }));
+
+    expect(screen.queryByTestId('unclear-marker')).not.toBeInTheDocument();
   });
 });

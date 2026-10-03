@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 
 /** Props for {@link AudioClip}. */
 export interface AudioClipProps {
@@ -25,20 +25,7 @@ export interface AudioClipProps {
  */
 export function AudioClip({ label, blob, loading = false, error = null }: AudioClipProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
-
-  useEffect(() => {
-    const element = audioRef.current;
-    if (!blob || !element) return;
-
-    const url = URL.createObjectURL(blob);
-    element.src = url;
-    return () => {
-      element.removeAttribute('src');
-      // Removing src alone leaves the element holding the old resource; load() releases it.
-      element.load();
-      URL.revokeObjectURL(url);
-    };
-  }, [blob]);
+  useBlobSource(audioRef, blob);
 
   return (
     <figure className="space-y-1">
@@ -56,4 +43,28 @@ export function AudioClip({ label, blob, loading = false, error = null }: AudioC
       )}
     </figure>
   );
+}
+
+/**
+ * Plays `blob` through the referenced media element, revoking its object URL when the
+ * blob changes or the element goes away. See {@link AudioClip} for why the URL lives
+ * entirely inside one effect run.
+ *
+ * @param ref - The element to play through; it may mount after the blob arrives.
+ * @param blob - The recording, or null for none.
+ */
+export function useBlobSource(ref: RefObject<HTMLMediaElement | null>, blob: Blob | null): void {
+  useEffect(() => {
+    const element = ref.current;
+    if (!blob || !element) return;
+
+    const url = URL.createObjectURL(blob);
+    element.src = url;
+    return () => {
+      element.removeAttribute('src');
+      // Removing src alone leaves the element holding the old resource; load() releases it.
+      element.load();
+      URL.revokeObjectURL(url);
+    };
+  }, [ref, blob]);
 }

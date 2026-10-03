@@ -45,7 +45,9 @@ export function useSubmitAttempt() {
 }
 
 /**
- * Fetches a recording as a Blob, for playback through an object URL.
+ * Fetches a recording's bytes, for drawing its waveform and for playback through an
+ * object URL. Bytes rather than a Blob: the waveform needs the samples, and the caller can
+ * wrap the same bytes in a Blob synchronously.
  *
  * Playing from a blob rather than `<audio src>` sidesteps Safari, which expects byte-range
  * (206) responses for media elements and gets none from these endpoints.
@@ -55,11 +57,11 @@ export function useSubmitAttempt() {
  *   Reference audio can change when a drill is edited, so it goes stale after a few
  *   minutes and is revalidated on the next visit; its ETag makes that a cheap 304.
  *
- * Never refetched on window focus or reconnect. Every refetch yields a new Blob object,
- * and a new Blob reloads the player: switching tabs and back would restart the reference
- * from zero mid-listen.
+ * Never refetched on window focus or reconnect. Every refetch yields new bytes, hence a
+ * new Blob, and a new Blob reloads the player: switching tabs and back would restart the
+ * reference from zero mid-listen.
  */
-export function useAudioBlob(url: string | null, immutable = false) {
+export function useAudioBytes(url: string | null, immutable = false) {
   return useQuery({
     queryKey: queryKeys.audio.clip(url ?? 'none'),
     // skipToken, not `enabled: false`: refetch() ignores `enabled`, and would then fetch
@@ -73,7 +75,7 @@ export function useAudioBlob(url: string | null, immutable = false) {
             if (!response.ok) {
               throw new ApiError(`Audio unavailable (${response.status})`, response.status);
             }
-            return response.blob();
+            return response.arrayBuffer();
           },
     staleTime: immutable ? Infinity : 5 * 60 * 1000,
     refetchOnWindowFocus: false,

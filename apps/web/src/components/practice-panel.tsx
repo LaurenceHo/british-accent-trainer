@@ -1,13 +1,14 @@
 import { DIFFICULTY_LABELS, RP_FEATURE_LABELS, type Drill } from '@api/domain';
 import { useEffect, useMemo, useRef } from 'react';
 import { ApiError, referenceAudioUrl, type SubmittedAttempt } from '@/api/client';
-import { useAudioBlob, useSubmitAttempt } from '@/api/hooks';
+import { useAudioBytes, useSubmitAttempt } from '@/api/hooks';
 import {
   useRecorder,
   type RecorderErrorReason,
   type RecorderState,
 } from '@/audio/use-recorder';
 import { AudioClip } from '@/components/audio-clip';
+import { ComparePanel } from '@/components/compare-panel';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -40,16 +41,16 @@ export interface PracticePanelProps {
  * Remount this component per drill (key it on the drill id) so a take never carries over.
  */
 export function PracticePanel({ drill }: PracticePanelProps) {
-  const reference = useAudioBlob(referenceAudioUrl(drill.id));
+  const reference = useAudioBytes(referenceAudioUrl(drill.id));
+  const referenceBlob = useMemo(
+    () => (reference.data ? new Blob([reference.data], { type: 'audio/wav' }) : null),
+    [reference.data],
+  );
   const recorder = useRecorder();
   const submit = useSubmitAttempt();
 
   const { state } = recorder;
   const take = state.status === 'done' ? state.wav : null;
-  const takeBlob = useMemo(
-    () => (take ? new Blob([take], { type: 'audio/wav' }) : null),
-    [take],
-  );
 
   const busy = state.status === 'requesting' || state.status === 'processing' || submit.isPending;
 
@@ -91,17 +92,20 @@ export function PracticePanel({ drill }: PracticePanelProps) {
         <p className="text-sm">{drill.coachingNote}</p>
       </header>
 
-      <AudioClip
-        label="Native reference"
-        blob={reference.data ?? null}
-        loading={reference.isPending}
-        // Only when nothing is cached: a failed background refetch must not hide playable audio.
-        error={
-          reference.isError && !reference.data
-            ? 'The reference recording is unavailable right now.'
-            : null
-        }
-      />
+      {/* Once there is a take, the comparison below plays the reference instead. */}
+      {!take && (
+        <AudioClip
+          label="Native reference"
+          blob={referenceBlob}
+          loading={reference.isPending}
+          // Only when nothing is cached: a failed background refetch must not hide playable audio.
+          error={
+            reference.isError && !reference.data
+              ? 'The reference recording is unavailable right now.'
+              : null
+          }
+        />
+      )}
 
       <section className="space-y-3" aria-labelledby="record-heading">
         <h3 id="record-heading" className="text-sm font-medium">
@@ -138,9 +142,16 @@ export function PracticePanel({ drill }: PracticePanelProps) {
             <AlertDescription>{RECORDER_ERRORS[state.reason]}</AlertDescription>
           </Alert>
         )}
-
-        {takeBlob && <AudioClip label="Your take" blob={takeBlob} />}
       </section>
+
+      {take && (
+        <ComparePanel
+          reference={reference.data ?? null}
+          take={take}
+          // From the result, so a new take — which resets the submission — drops old markers.
+          words={submit.data?.attempt.wordScores}
+        />
+      )}
 
       {submit.isError && (
         <Alert variant="destructive">
