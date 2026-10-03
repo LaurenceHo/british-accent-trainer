@@ -1,6 +1,6 @@
 import type { Drill } from '@api/domain';
 import { focusManager } from '@tanstack/react-query';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Recorder, RecorderState } from '@/audio/use-recorder';
@@ -310,5 +310,26 @@ describe('a failed reference alongside a take', () => {
 
     expect(await screen.findByText('The reference recording is unavailable right now.')).toBeInTheDocument();
     expect(screen.queryByText('Loading…')).not.toBeInTheDocument();
+  });
+});
+
+describe('offline', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('disables checking clarity while offline, saying why, and re-enables it on reconnect', async () => {
+    // Offline the request could only fail; the learner is told before trying, not after.
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    recorderState = { status: 'done', wav: TAKE };
+    renderPanel();
+
+    const check = screen.getByRole('button', { name: 'Check clarity' });
+    expect(check).toBeDisabled();
+    expect(check).toHaveAccessibleDescription('Checking clarity needs a connection.');
+
+    onLine.mockReturnValue(true);
+    await act(async () => window.dispatchEvent(new Event('online')));
+
+    expect(screen.getByRole('button', { name: 'Check clarity' })).toBeEnabled();
+    expect(screen.queryByText('Checking clarity needs a connection.')).not.toBeInTheDocument();
   });
 });

@@ -51,6 +51,8 @@ apps/web/          React + Vite PWA — shadcn/ui, Tailwind v4, Vitest + jsdom
   src/audio/       Recording → 16 kHz mono WAV (use-recorder, to-wav, wav-encoder);
                    waveforms and A/B playback (wav-reader, waveform, use-ab-player)
   src/progress/    Trend maths for the progress screen (dates → chart positions)
+  src/sw/          Service worker (sw.ts, built to /sw.js), its routing rules, registration
+  scripts/         make-icons.ts → public/icons; run with bun, commit the PNGs
   src/components/ui/  shadcn components, copied in and edited directly
 content/           Drill corpus as typed data, loaded by scripts/seed.ts
 docs/plans/        YYYY-MM-DD-<slug>.md

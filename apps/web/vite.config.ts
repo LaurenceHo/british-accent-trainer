@@ -14,6 +14,24 @@ export default defineConfig({
       '@api/domain': path.resolve(import.meta.dirname, '../api/src/domain.ts'),
     },
   },
+  define: {
+    // Baked into the service worker so every build changes its bytes, which is what makes
+    // browsers install the new worker and drop the previous build's caches.
+    __BUILD_ID__: JSON.stringify(Date.now().toString(36)),
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(import.meta.dirname, 'index.html'),
+        // A second entry, at a fixed URL: a service worker's scope comes from its path,
+        // and the page must be able to name it without knowing a build hash.
+        sw: path.resolve(import.meta.dirname, 'src/sw/sw.ts'),
+      },
+      output: {
+        entryFileNames: (chunk) => (chunk.name === 'sw' ? 'sw.js' : 'assets/[name]-[hash].js'),
+      },
+    },
+  },
   server: {
     // The Worker API runs separately under wrangler. Proxying keeps the browser on one
     // origin, so no CORS configuration is needed in development.

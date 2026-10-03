@@ -1,6 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { DrillScreen } from '@/components/drill-screen';
 import { ProgressScreen } from '@/components/progress-screen';
+import { useOnline } from '@/lib/use-online';
 import { cn } from '@/lib/utils';
 
 /** The app's views, addressed by URL hash so the back button and deep links work. */
@@ -28,6 +29,7 @@ function useRoute(): Route {
  */
 export function App() {
   const route = useRoute();
+  const online = useOnline();
   const mainRef = useRef<HTMLElement>(null);
   // The route last shown. Compared rather than a "first render" flag, which StrictMode's
   // double-run of effects would flip on load.
@@ -45,6 +47,18 @@ export function App() {
 
   return (
     <div className="mx-auto max-w-5xl p-6">
+      {/* Moves focus itself rather than linking to "#main": the URL hash is the router, and
+          following an in-page anchor would navigate away from the current view. */}
+      <a
+        href="#main"
+        onClick={(event) => {
+          event.preventDefault();
+          mainRef.current?.focus();
+        }}
+        className="bg-background sr-only rounded-md border px-3 py-2 focus:not-sr-only focus:absolute focus:top-2 focus:left-2"
+      >
+        Skip to content
+      </a>
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">British Accent Trainer</h1>
@@ -76,6 +90,15 @@ export function App() {
           </ul>
         </nav>
       </header>
+      {/* Always mounted: a live region that appears together with its text is not announced. */}
+      <div role="status">
+        {!online && (
+          <p className="bg-muted mb-6 rounded-md border px-4 py-3 text-sm">
+            You are offline. You can still record and replay your take, but checking clarity,
+            loading new reference recordings and progress need a connection.
+          </p>
+        )}
+      </div>
       <main ref={mainRef} tabIndex={-1} aria-label={ROUTES[route].label} className="outline-none">
         {route === 'progress' ? <ProgressScreen /> : <DrillScreen />}
       </main>

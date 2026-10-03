@@ -1,5 +1,5 @@
 import { DIFFICULTY_LABELS, RP_FEATURE_LABELS, type Drill } from '@api/domain';
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { ApiError, referenceAudioUrl, type SubmittedAttempt } from '@/api/client';
 import { useAudioBytes, useSubmitAttempt } from '@/api/hooks';
 import {
@@ -13,6 +13,7 @@ import { ComparePanel } from '@/components/compare-panel';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useOnline } from '@/lib/use-online';
 
 /** What to tell the learner for each way recording can fail. */
 const RECORDER_ERRORS: Record<RecorderErrorReason, string> = {
@@ -59,6 +60,8 @@ export function PracticePanel({ drill }: PracticePanelProps) {
   // result already known. Offer a new take instead.
   const unheard = submit.error instanceof ApiError && submit.error.code === 'not-recognised';
   const canSubmit = take !== null && !submit.data && !unheard;
+  const online = useOnline();
+  const offlineNoteId = useId();
 
   const recordButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -119,11 +122,18 @@ export function PracticePanel({ drill }: PracticePanelProps) {
           {canSubmit && (
             <Button
               variant="secondary"
-              disabled={busy}
+              // Offline it would only fail with a network error; say so before, not after.
+              disabled={busy || !online}
+              aria-describedby={online ? undefined : offlineNoteId}
               onClick={() => submit.mutate({ drillId: drill.id, wav: take })}
             >
               {submit.isPending ? 'Checking…' : 'Check clarity'}
             </Button>
+          )}
+          {canSubmit && !online && (
+            <p id={offlineNoteId} className="text-muted-foreground self-center text-sm">
+              Checking clarity needs a connection.
+            </p>
           )}
         </div>
 
