@@ -1,10 +1,31 @@
 import path from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 
+/**
+ * Fails the build if the service worker would import another chunk.
+ *
+ * It is registered as a classic worker, which cannot use `import`. That holds only while no
+ * page code imports anything from `src/sw/`; if it ever did, the bundler would move the
+ * shared code into a chunk both entries import, and the worker would fail to start — in
+ * production only, silently. This turns that into a build error.
+ */
+function selfContainedServiceWorker(): Plugin {
+  return {
+    name: 'self-contained-service-worker',
+    generateBundle(_options, bundle) {
+      const sw = Object.values(bundle).find((c) => c.type === 'chunk' && c.fileName === 'sw.js');
+      if (sw?.type === 'chunk' && (sw.imports.length > 0 || sw.dynamicImports.length > 0)) {
+        this.error(`sw.js must be self-contained but imports ${[...sw.imports, ...sw.dynamicImports].join(', ')}`);
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), selfContainedServiceWorker()],
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, './src'),

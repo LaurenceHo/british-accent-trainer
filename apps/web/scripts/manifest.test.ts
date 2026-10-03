@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { SIGNATURE } from './png';
 
 /**
  * Installability depends on the manifest and its icons agreeing, and browsers fail
@@ -32,9 +33,7 @@ const manifest = JSON.parse(
 /** Width and height from a PNG's IHDR chunk, after checking it is a PNG at all. */
 function pngSize(file: string): { width: number; height: number } {
   const bytes = readFileSync(path.join(PUBLIC, file));
-  expect([...bytes.subarray(0, 8)], `${file} is not a PNG`).toEqual([
-    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-  ]);
+  expect([...bytes.subarray(0, 8)], `${file} is not a PNG`).toEqual([...SIGNATURE]);
   return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 }
 

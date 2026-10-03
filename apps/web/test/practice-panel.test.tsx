@@ -320,16 +320,21 @@ describe('offline', () => {
     // Offline the request could only fail; the learner is told before trying, not after.
     const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     recorderState = { status: 'done', wav: TAKE };
-    renderPanel();
+    const fetch = renderPanel({ '/api/attempts': scored() });
 
     const check = screen.getByRole('button', { name: 'Check clarity' });
-    expect(check).toBeDisabled();
+    expect(check).toHaveAttribute('aria-disabled', 'true');
     expect(check).toHaveAccessibleDescription('Checking clarity needs a connection.');
+    // Still reachable by keyboard, so the reason can be heard, but it sends nothing.
+    check.focus();
+    expect(check).toHaveFocus();
+    await userEvent.click(check);
+    expect(fetch.calls.some((c) => c.url.startsWith('/api/attempts'))).toBe(false);
 
     onLine.mockReturnValue(true);
     await act(async () => window.dispatchEvent(new Event('online')));
 
-    expect(screen.getByRole('button', { name: 'Check clarity' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Check clarity' })).not.toHaveAttribute('aria-disabled');
     expect(screen.queryByText('Checking clarity needs a connection.')).not.toBeInTheDocument();
   });
 });

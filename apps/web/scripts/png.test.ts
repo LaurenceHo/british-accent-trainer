@@ -1,6 +1,6 @@
 import { inflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { crc32, encodePng } from './png';
+import { crc32, encodePng, SIGNATURE } from './png';
 
 /**
  * Byte-level checks: a malformed icon is silently ignored by browsers, which then refuse
@@ -23,7 +23,9 @@ describe('encodePng', () => {
   const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
 
   it('starts with the PNG signature', () => {
-    expect([...png.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    expect([...png.subarray(0, 8)]).toEqual([...SIGNATURE]);
+    // The signature itself, spelled out once: 0x89, then "PNG", CR LF, EOF (0x1a), LF.
+    expect([...SIGNATURE]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   });
 
   it('declares the size and 8-bit RGBA in IHDR', () => {

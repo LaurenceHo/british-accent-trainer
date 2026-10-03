@@ -120,20 +120,27 @@ export function PracticePanel({ drill }: PracticePanelProps) {
             </Button>
           )}
           {canSubmit && (
-            <Button
-              variant="secondary"
-              // Offline it would only fail with a network error; say so before, not after.
-              disabled={busy || !online}
-              aria-describedby={online ? undefined : offlineNoteId}
-              onClick={() => submit.mutate({ drillId: drill.id, wav: take })}
-            >
-              {submit.isPending ? 'Checking…' : 'Check clarity'}
-            </Button>
-          )}
-          {canSubmit && !online && (
-            <p id={offlineNoteId} className="text-muted-foreground self-center text-sm">
-              Checking clarity needs a connection.
-            </p>
+            <>
+              <Button
+                variant="secondary"
+                disabled={busy}
+                // Offline it would only fail with a network error, so say so before, not after.
+                // aria-disabled rather than disabled: a disabled button leaves the tab order,
+                // and keyboard users would never reach the reason it describes.
+                aria-disabled={!online || undefined}
+                aria-describedby={online ? undefined : offlineNoteId}
+                onClick={() => {
+                  if (online) submit.mutate({ drillId: drill.id, wav: take });
+                }}
+              >
+                {submit.isPending ? 'Checking…' : 'Check clarity'}
+              </Button>
+              {!online && (
+                <p id={offlineNoteId} className="text-muted-foreground self-center text-sm">
+                  Checking clarity needs a connection.
+                </p>
+              )}
+            </>
           )}
         </div>
 

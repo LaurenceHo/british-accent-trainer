@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { deflateSync } from 'node:zlib';
 
 /**
@@ -7,7 +8,8 @@ import { deflateSync } from 'node:zlib';
  * Node's built-in zlib, which is exactly what PNG's IDAT chunk requires.
  */
 
-const SIGNATURE = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+/** The eight bytes every PNG file starts with. */
+export const SIGNATURE = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -64,17 +66,10 @@ export function encodePng(width: number, height: number, rgba: Uint8Array): Uint
     raw.set(rgba.subarray(y * stride, (y + 1) * stride), y * (stride + 1) + 1);
   }
 
-  const parts = [
+  return Buffer.concat([
     SIGNATURE,
     chunk('IHDR', header),
     chunk('IDAT', deflateSync(raw)),
     chunk('IEND', new Uint8Array()),
-  ];
-  const png = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let offset = 0;
-  for (const part of parts) {
-    png.set(part, offset);
-    offset += part.length;
-  }
-  return png;
+  ]);
 }

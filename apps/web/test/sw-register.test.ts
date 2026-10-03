@@ -13,6 +13,7 @@ function fakeServiceWorker() {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
   Reflect.deleteProperty(navigator, 'serviceWorker');
 });
 
@@ -39,11 +40,13 @@ describe('registerServiceWorker', () => {
   });
 
   it('does nothing where service workers are unsupported', () => {
+    // Asserting "does not throw" would prove nothing: jsdom reports an error inside a
+    // listener rather than throwing it. So check no listener is installed at all.
     vi.stubEnv('PROD', true);
+    const listen = vi.spyOn(window, 'addEventListener');
 
-    expect(() => {
-      registerServiceWorker();
-      window.dispatchEvent(new Event('load'));
-    }).not.toThrow();
+    registerServiceWorker();
+
+    expect(listen).not.toHaveBeenCalledWith('load', expect.anything(), expect.anything());
   });
 });

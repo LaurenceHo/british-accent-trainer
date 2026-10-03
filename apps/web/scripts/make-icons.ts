@@ -68,7 +68,7 @@ function draw(size: number, scale: number): Uint8Array {
       }
       const t = hits / SUPERSAMPLE ** 2;
       const o = (py * size + px) * 4;
-      for (let c = 0; c < 3; c++) rgba[o + c] = Math.round(BACKGROUND[c]! + (BAR[c]! - BACKGROUND[c]!) * t);
+      for (let c = 0; c < 3; c++) rgba[o + c] = Math.round(BACKGROUND[c] + (BAR[c] - BACKGROUND[c]) * t);
       rgba[o + 3] = 255;
     }
   }
