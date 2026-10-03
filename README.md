@@ -153,14 +153,95 @@ no Azure credentials, and the same three commands run in CI on every pull reques
 
 ## Deploying
 
-**Put the app behind [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/)
-before deploying it.** The API has no authentication of its own — it is a single-user
-tool — and it stores your voice recordings. Without Access, anyone who knows the routes
-(and they are in this repository) could list and download every recording.
+The app runs on one hostname you own, for example `trainer.example.com`:
 
-Make sure the Worker is not *also* reachable on an address Access does not cover, such as
-the default `workers.dev` URL or a preview URL. See the Security section of
-[the design spec](docs/specs/2026-09-13-british-accent-trainer-design.md#security).
+```
+trainer.example.com/api/*   →  API Worker      (apps/api, wrangler.jsonc)
+trainer.example.com/*       →  Pages project   (apps/web, wrangler.jsonc)
+```
+
+Page and API share one origin, so one Cloudflare Access application protects both. The
+service worker can see the API, and no CORS is needed.
+
+**The app must sit behind [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/).**
+The API has no authentication of its own, because it is a single-user tool. It stores
+your voice recordings, and its routes are public in this repository. The Worker has
+`workers.dev` and preview URLs switched off, so the protected hostname is its only
+address. Its route and the Pages custom domain are bound in the dashboard, not in
+`wrangler.jsonc`, so your domain never appears in this repository.
+
+### One-time setup
+
+**Prerequisites, in the Cloudflare dashboard:**
+
+- Your domain is on Cloudflare.
+- **R2 is enabled** (R2 → enable; a payment method may be required even on the free tier).
+- **Zero Trust is set up**: choose a team name and the Free plan, which may also ask for a
+  payment method. This is what provides Access. One-time PIN login to your email works with
+  no identity provider.
+
+The order below keeps the app unreachable until Access protects it. Run commands from
+`apps/api` unless noted.
+
+1. **Log in:** `bunx wrangler login`
+2. **Database:** `bunx wrangler d1 create accent-trainer`. Paste the `database_id` it
+   prints into `apps/api/wrangler.jsonc`, replacing the zeros, and commit it. The id is
+   not a secret. Then:
+   ```bash
+   bun run db:migrate:remote   # create the tables
+   bun run db:seed:remote      # load the drills; safe to rerun after editing content/
+   ```
+3. **Audio bucket:** `bunx wrangler r2 bucket create accent-trainer-audio`
+4. **API Worker:** deploy it first, then set its secrets:
+   ```bash
+   bun run deploy                              # no route yet, so not reachable at all
+   bunx wrangler secret put AZURE_SPEECH_KEY
+   bunx wrangler secret put AZURE_SPEECH_REGION
+   ```
+   Wrangler reports "No targets deployed". That is expected: the route comes in step 7.
+   Each `secret put` prompts for its value, so the key never sits in a file or your shell
+   history.
+5. **Access, before anything is reachable.** In Zero Trust, add a *self-hosted* Access
+   application. Give it your hostname (for example `trainer.example.com`) **and**
+   `accent-trainer-web.pages.dev` as its domains, with an *Allow* policy for your own
+   email. Then add two more applications on your hostname, each with a *Bypass* policy for
+   everyone: one for the path `/manifest.webmanifest` and one for `/icons/*`. Browsers can
+   fetch these without your session cookie, and without the bypass they would get the
+   login page and never offer to install the app. Neither path holds anything private.
+6. **Web app.** From `apps/web`:
+   ```bash
+   bunx wrangler pages project create accent-trainer-web --production-branch master
+   bun run deploy
+   ```
+   Then go to **Workers & Pages → accent-trainer-web → Custom domains** and add your
+   hostname, which creates its DNS record. Also go to **Settings → Enable access policy**
+   to cover preview deployments, which the application in step 5 does not.
+7. **API route.** Go to **Workers & Pages → accent-trainer-api → Settings → Domains &
+   Routes → Add → Route**. Enter `trainer.example.com/api/*` (your hostname) and pick your
+   domain's zone. The route is bound there, not in `wrangler.jsonc`, so your domain stays
+   out of the repository, and later deploys leave it in place.
+8. **Check.** In a private window:
+   - `https://trainer.example.com/` and `https://accent-trainer-web.pages.dev/` both ask
+     you to log in;
+   - after logging in, `https://trainer.example.com/api/drills` returns the drills as
+     JSON. That proves the Worker route wins over Pages on the same hostname.
+
+Dashboard menu names change from time to time; if one is missing, search the dashboard
+for it.
+
+### Updating
+
+```bash
+cd apps/web && bun run deploy              # web
+cd apps/api && bun run db:migrate:remote   # first, if a change adds a migration
+cd apps/api && bun run deploy              # API
+```
+
+The web deploy always goes to production (`--branch=master`), even when run from a
+feature branch. Without that flag, Pages would treat a feature branch as a preview.
+
+`bunx wrangler deploy --dry-run` in `apps/api` bundles the Worker and checks its bindings
+without uploading anything or needing a login.
 
 ## Project structure
 

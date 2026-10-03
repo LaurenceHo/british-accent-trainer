@@ -3,29 +3,43 @@
   "name": "accent-trainer-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
-  "observability": {
-    "enabled": true
-  },
-
-  // D1 holds drills and attempts. `database_id` is a placeholder: every task
-  // through Task 11 runs against local Miniflare simulation, so no remote
-  // database is provisioned yet. Replace before the first `wrangler deploy`.
+  // D1 Database binding: drills and attempts.
+  // Replace database_id with the one printed by `bunx wrangler d1 create accent-trainer`
+  // before the first deploy. It is not a secret: it is useless without an account token.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "accent-trainer",
-      "database_id": "00000000-0000-0000-0000-000000000000"
-    }
+      "database_id": "00000000-0000-0000-0000-000000000000",
+    },
   ],
-
-  // R2 stores reference TTS audio (Task 7) and submitted attempt audio (Task 10).
+  // R2 bucket: reference TTS audio and submitted attempt audio.
   "r2_buckets": [
     {
       "binding": "AUDIO",
-      "bucket_name": "accent-trainer-audio"
-    }
-  ]
-
-  // AZURE_SPEECH_KEY and AZURE_SPEECH_REGION are NOT declared here.
-  // Local: apps/api/.dev.vars (gitignored). Deployed: `wrangler secret put`.
+      "bucket_name": "accent-trainer-audio",
+    },
+  ],
+  // The Worker is reached ONLY through the route `<your hostname>/api/*`, bound in the
+  // Cloudflare dashboard (Settings → Domains & Routes) and protected by Cloudflare Access.
+  // The route is deliberately not declared here: it would publish the domain in this public
+  // repository, and `wrangler deploy` leaves a dashboard-bound route in place.
+  //
+  // workers.dev and preview URLs are off. Each would be a second address outside Access,
+  // and this API serves voice recordings with no login of its own.
+  "workers_dev": false,
+  "preview_urls": false,
+  // Secrets (AZURE_SPEECH_KEY, AZURE_SPEECH_REGION) are set with `wrangler secret put`,
+  // never here. Locally they come from apps/api/.dev.vars (gitignored).
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "persist": true,
+    },
+    "traces": {
+      "enabled": true,
+      "persist": true,
+    },
+  },
 }

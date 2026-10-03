@@ -1,0 +1,9 @@
+# Cloudflare Pages response headers.
+
+# Vite fingerprints these names, so a file's content never changes under the same URL.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The browser must see a new service worker as soon as one is deployed.
+/sw.js
+  Cache-Control: no-cache

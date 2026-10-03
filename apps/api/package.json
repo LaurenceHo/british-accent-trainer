@@ -5,12 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "dev:remote": "wrangler dev --remote",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:migrate": "wrangler d1 migrations apply accent-trainer --local",
+    "db:migrate:remote": "wrangler d1 migrations apply accent-trainer --remote",
     "db:seed": "bun run ../../scripts/seed.ts > .seed.sql && wrangler d1 execute accent-trainer --local --file=.seed.sql && rm .seed.sql",
+    "db:seed:remote": "bun run ../../scripts/seed.ts > .seed.sql && wrangler d1 execute accent-trainer --remote --file=.seed.sql && rm .seed.sql",
     "deploy": "wrangler deploy"
   },
   "dependencies": {
