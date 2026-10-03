@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { toScorableWav } from '@/audio/to-wav';
+import { RecordingTooShortError, toScorableWav } from '@/audio/to-wav';
 
 /**
  * jsdom has no Web Audio, so these substitute minimal fakes. What they verify is the
@@ -83,5 +83,25 @@ describe('toScorableWav', () => {
 
     await expect(toScorableWav(new Blob(['x']))).rejects.toThrow();
     expect(close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('length limits', () => {
+  it('rejects a take too short to be an attempt', async () => {
+    // Sent on, a near-empty file fails at the scoring API with a far less useful message.
+    installFakeAudio({ duration: 0.1 });
+
+    await expect(toScorableWav(new Blob(['x']))).rejects.toBeInstanceOf(RecordingTooShortError);
+  });
+
+  it('truncates to inside the API cap, however late the auto-stop fired', async () => {
+    // Background tabs clamp and delay timers, so the recorder can overrun its deadline.
+    const { offlineCalls } = installFakeAudio({ duration: 45 });
+
+    const wav = await toScorableWav(new Blob(['x']));
+    const seconds = new DataView(wav).getUint32(40, true) / 2 / 16_000;
+
+    expect(offlineCalls[0]?.frames).toBe(30 * 16_000 - 1);
+    expect(seconds).toBeLessThan(30);
   });
 });

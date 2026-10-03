@@ -1,27 +1,52 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type * as ToWav from '@/audio/to-wav';
+import { RecordingTooShortError } from '@/audio/to-wav';
 import { MAX_RECORD_SECONDS, useRecorder } from '@/audio/use-recorder';
+import { MAX_DURATION_SECONDS } from '@/audio/wav-encoder';
 
 /**
  * The recorder hook against fake browser media APIs.
  *
- * Conversion is mocked here — it has its own tests — so these focus on the state machine
- * and, above all, on the microphone being released. A leaked track keeps the browser's
- * recording indicator lit after the learner has finished, which reads as being listened to.
+ * The overriding requirement is that the microphone is always released: a leaked track
+ * keeps the browser's recording indicator lit, which reads as being listened to.
+ *
+ * Two properties of the fakes matter. The recorder dispatches `stop` **asynchronously**, as
+ * browsers do — a synchronous fake would let cleanup bugs hide behind `onstop`. And
+ * conversion is a promise each test resolves by hand, so it can act mid-conversion.
  */
 
-vi.mock('@/audio/to-wav', () => ({
-  toScorableWav: vi.fn(async () => new ArrayBuffer(44)),
+let conversion: {
+  resolve: (wav: ArrayBuffer) => void;
+  reject: (error: unknown) => void;
+} | null = null;
+const toScorableWav = vi.fn(
+  () =>
+    new Promise<ArrayBuffer>((resolve, reject) => {
+      conversion = { resolve, reject };
+    }),
+);
+
+vi.mock('@/audio/to-wav', async (importOriginal) => ({
+  ...(await importOriginal<typeof ToWav>()),
+  toScorableWav: () => toScorableWav(),
 }));
 
 class FakeMediaRecorder {
   static instances: FakeMediaRecorder[] = [];
+  static throwOnConstruct = false;
+
   state: 'inactive' | 'recording' = 'inactive';
   mimeType = 'audio/webm';
   ondataavailable: ((event: { data: Blob }) => void) | null = null;
+  onerror: (() => void) | null = null;
   onstop: (() => void) | null = null;
+  emitsData = true;
 
   constructor(readonly stream: MediaStream) {
+    if (FakeMediaRecorder.throwOnConstruct) {
+      throw new DOMException('unsupported', 'NotSupportedError');
+    }
     FakeMediaRecorder.instances.push(this);
   }
   start() {
@@ -29,26 +54,77 @@ class FakeMediaRecorder {
   }
   stop() {
     this.state = 'inactive';
-    this.ondataavailable?.({ data: new Blob(['audio']) });
-    this.onstop?.();
+    // Browsers queue these as tasks; they never fire inside stop().
+    queueMicrotask(() => {
+      if (this.emitsData) this.ondataavailable?.({ data: new Blob(['audio']) });
+      this.onstop?.();
+    });
+  }
+  /** Simulates a fatal recorder error, which per spec is followed by `stop`. */
+  fail() {
+    this.onerror?.();
+    this.stop();
   }
 }
 
-function fakeStream() {
+interface FakeTrack {
+  stop: ReturnType<typeof vi.fn>;
+}
+
+function fakeStream(): { stream: MediaStream; track: FakeTrack } {
   const track = { stop: vi.fn() };
   return { stream: { getTracks: () => [track] } as unknown as MediaStream, track };
 }
 
-function installMedia(getUserMedia: () => Promise<MediaStream>) {
+/** Installs a getUserMedia that resolves with a fresh stream per call. */
+function installMedia() {
+  const tracks: FakeTrack[] = [];
+  const getUserMedia = vi.fn(async () => {
+    const { stream, track } = fakeStream();
+    tracks.push(track);
+    return stream;
+  });
   vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
   Object.defineProperty(navigator, 'mediaDevices', {
-    value: { getUserMedia: vi.fn(getUserMedia) },
+    value: { getUserMedia },
+    configurable: true,
+  });
+  return { getUserMedia, tracks };
+}
+
+/** Installs a getUserMedia whose promise each test resolves by hand. */
+function installPendingMedia() {
+  let grant: (stream: MediaStream) => void = () => undefined;
+  vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
+  Object.defineProperty(navigator, 'mediaDevices', {
+    value: {
+      getUserMedia: vi.fn(
+        () =>
+          new Promise<MediaStream>((resolve) => {
+            grant = resolve;
+          }),
+      ),
+    },
+    configurable: true,
+  });
+  return { grant: (stream: MediaStream) => grant(stream) };
+}
+
+function installFailingMedia(name: string) {
+  vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
+  Object.defineProperty(navigator, 'mediaDevices', {
+    value: { getUserMedia: vi.fn(async () => Promise.reject(new DOMException('x', name))) },
     configurable: true,
   });
 }
 
+const flush = () => act(async () => undefined);
+
 beforeEach(() => {
   FakeMediaRecorder.instances = [];
+  FakeMediaRecorder.throwOnConstruct = false;
+  conversion = null;
+  toScorableWav.mockClear();
 });
 
 afterEach(() => {
@@ -57,45 +133,183 @@ afterEach(() => {
   Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true });
 });
 
-describe('useRecorder', () => {
-  it('records, then yields a WAV once stopped', async () => {
-    const { stream } = fakeStream();
-    installMedia(async () => stream);
+describe('a normal take', () => {
+  it('records, converts, then yields the WAV', async () => {
+    installMedia();
     const { result } = renderHook(() => useRecorder());
 
     await act(() => result.current.start());
     expect(result.current.state.status).toBe('recording');
 
     act(() => result.current.stop());
-    await waitFor(() => expect(result.current.state.status).toBe('done'));
+    await waitFor(() => expect(result.current.state.status).toBe('processing'));
+
+    const wav = new ArrayBuffer(44);
+    await act(async () => conversion?.resolve(wav));
+    expect(result.current.state).toEqual({ status: 'done', wav });
   });
 
-  it('releases the microphone as soon as the take ends', async () => {
-    const { stream, track } = fakeStream();
-    installMedia(async () => stream);
+  it('releases the microphone when the take ends', async () => {
+    const { tracks } = installMedia();
     const { result } = renderHook(() => useRecorder());
 
     await act(() => result.current.start());
     act(() => result.current.stop());
+    await flush();
 
-    expect(track.stop).toHaveBeenCalled();
+    expect(tracks[0]?.stop).toHaveBeenCalled();
   });
 
-  it('releases the microphone if the screen unmounts mid-recording', async () => {
-    const { stream, track } = fakeStream();
-    installMedia(async () => stream);
+  it('can record again after a finished take', async () => {
+    installMedia();
+    const { result } = renderHook(() => useRecorder());
+
+    await act(() => result.current.start());
+    act(() => result.current.stop());
+    await flush();
+    await act(async () => conversion?.resolve(new ArrayBuffer(44)));
+
+    await act(() => result.current.start());
+    expect(result.current.state.status).toBe('recording');
+    expect(FakeMediaRecorder.instances).toHaveLength(2);
+  });
+
+  it('returns to idle on reset after a take', async () => {
+    installMedia();
+    const { result } = renderHook(() => useRecorder());
+
+    await act(() => result.current.start());
+    act(() => result.current.stop());
+    await flush();
+    await act(async () => conversion?.resolve(new ArrayBuffer(44)));
+
+    act(() => result.current.reset());
+    expect(result.current.state.status).toBe('idle');
+  });
+});
+
+describe('releasing the microphone on unmount', () => {
+  it('releases it synchronously, before the recorder dispatches stop', async () => {
+    // Browsers fire `stop` later; waiting for onstop would leave the mic live after the
+    // screen had gone. No flush here — the release must already have happened.
+    const { tracks } = installMedia();
     const { result, unmount } = renderHook(() => useRecorder());
 
     await act(() => result.current.start());
     unmount();
 
-    expect(track.stop).toHaveBeenCalled();
+    expect(tracks[0]?.stop).toHaveBeenCalled();
   });
 
-  it('stops itself before the scoring API duration cap', async () => {
-    vi.useFakeTimers();
-    const { stream } = fakeStream();
-    installMedia(async () => stream);
+  it('releases a microphone granted after the screen has unmounted', async () => {
+    const media = installPendingMedia();
+    const { result, unmount } = renderHook(() => useRecorder());
+
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = result.current.start();
+    });
+    unmount();
+    const { stream, track } = fakeStream();
+    await act(async () => {
+      media.grant(stream);
+      await pending;
+    });
+
+    expect(track.stop).toHaveBeenCalled();
+    expect(FakeMediaRecorder.instances).toHaveLength(0);
+  });
+
+  it('does not convert a take after the screen has gone', async () => {
+    installMedia();
+    const { result, unmount } = renderHook(() => useRecorder());
+
+    await act(() => result.current.start());
+    unmount();
+    await flush();
+
+    expect(toScorableWav).not.toHaveBeenCalled();
+  });
+});
+
+describe('races', () => {
+  it('starts only one recorder when start is clicked twice during the permission prompt', async () => {
+    // The guard must not wait for the prompt: React state lags a render, so a guard reading
+    // it lets both clicks through and orphans the first recorder with its mic still live.
+    const media = installPendingMedia();
+    const { result } = renderHook(() => useRecorder());
+
+    let first: Promise<void> = Promise.resolve();
+    let second: Promise<void> = Promise.resolve();
+    act(() => {
+      first = result.current.start();
+      second = result.current.start();
+    });
+    await act(async () => {
+      media.grant(fakeStream().stream);
+      await Promise.all([first, second]);
+    });
+
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+    expect(FakeMediaRecorder.instances).toHaveLength(1);
+  });
+
+  it('ignores start while the previous take is converting', async () => {
+    // Otherwise the old take's conversion lands as "done" while a new one is recording.
+    installMedia();
+    const { result } = renderHook(() => useRecorder());
+
+    await act(() => result.current.start());
+    act(() => result.current.stop());
+    await flush();
+    expect(result.current.state.status).toBe('processing');
+
+    await act(() => result.current.start());
+
+    expect(FakeMediaRecorder.instances).toHaveLength(1);
+    expect(result.current.state.status).toBe('processing');
+  });
+
+  it('ignores reset while the previous take is converting', async () => {
+    installMedia();
+    const { result } = renderHook(() => useRecorder());
+
+    await act(() => result.current.start());
+    act(() => result.current.stop());
+    await flush();
+
+    act(() => result.current.reset());
+    const wav = new ArrayBuffer(44);
+    await act(async () => conversion?.resolve(wav));
+
+    expect(result.current.state).toEqual({ status: 'done', wav });
+  });
+
+  it('cancels a take when stop is pressed during the permission prompt', async () => {
+    const media = installPendingMedia();
+    const { result } = renderHook(() => useRecorder());
+
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = result.current.start();
+    });
+    act(() => result.current.stop());
+    const { stream, track } = fakeStream();
+    await act(async () => {
+      media.grant(stream);
+      await pending;
+    });
+
+    expect(FakeMediaRecorder.instances).toHaveLength(0);
+    expect(track.stop).toHaveBeenCalled();
+    expect(result.current.state.status).toBe('idle');
+  });
+});
+
+describe('the auto-stop timer', () => {
+  it('stops the take before the scoring API duration cap', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    installMedia();
     const { result } = renderHook(() => useRecorder());
 
     await act(() => result.current.start());
@@ -104,29 +318,41 @@ describe('useRecorder', () => {
 
     act(() => vi.advanceTimersByTime(1));
     expect(FakeMediaRecorder.instances[0]?.state).toBe('inactive');
-    expect(MAX_RECORD_SECONDS).toBeLessThan(30);
+    expect(MAX_RECORD_SECONDS).toBeLessThan(MAX_DURATION_SECONDS);
   });
 
-  it('reports a refused permission as denied', async () => {
-    installMedia(async () => {
-      throw new DOMException('no', 'NotAllowedError');
-    });
+  it('does not let an earlier take’s deadline cut a later take short', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    installMedia();
+    const { result } = renderHook(() => useRecorder());
+
+    await act(() => result.current.start());
+    act(() => vi.advanceTimersByTime(5_000));
+    act(() => result.current.stop());
+    await flush();
+    await act(async () => conversion?.resolve(new ArrayBuffer(44)));
+
+    await act(() => result.current.start());
+    // Past the first take's deadline, short of the second's.
+    act(() => vi.advanceTimersByTime(MAX_RECORD_SECONDS * 1000 - 1_000));
+
+    expect(FakeMediaRecorder.instances[1]?.state).toBe('recording');
+  });
+});
+
+describe('failures', () => {
+  it.each([
+    ['NotAllowedError', 'denied'],
+    ['SecurityError', 'denied'],
+    ['NotFoundError', 'no-device'],
+    ['AbortError', 'failed'],
+  ] as const)('maps a %s from getUserMedia to %s', async (name, reason) => {
+    installFailingMedia(name);
     const { result } = renderHook(() => useRecorder());
 
     await act(() => result.current.start());
 
-    expect(result.current.state).toEqual({ status: 'error', reason: 'denied' });
-  });
-
-  it('reports a missing microphone as no-device', async () => {
-    installMedia(async () => {
-      throw new DOMException('none', 'NotFoundError');
-    });
-    const { result } = renderHook(() => useRecorder());
-
-    await act(() => result.current.start());
-
-    expect(result.current.state).toEqual({ status: 'error', reason: 'no-device' });
+    expect(result.current.state).toEqual({ status: 'error', reason });
   });
 
   it('reports an insecure or unsupported context as unsupported', async () => {
@@ -138,62 +364,57 @@ describe('useRecorder', () => {
     expect(result.current.state).toEqual({ status: 'error', reason: 'unsupported' });
   });
 
-  it('does not start a second recording while one is running', async () => {
-    const { stream } = fakeStream();
-    installMedia(async () => stream);
+  it('releases the stream and recovers when the recorder cannot be constructed', async () => {
+    FakeMediaRecorder.throwOnConstruct = true;
+    const { tracks } = installMedia();
     const { result } = renderHook(() => useRecorder());
 
     await act(() => result.current.start());
-    await act(() => result.current.start());
 
-    expect(FakeMediaRecorder.instances).toHaveLength(1);
+    expect(result.current.state).toEqual({ status: 'error', reason: 'failed' });
+    expect(tracks[0]?.stop).toHaveBeenCalled();
+
+    FakeMediaRecorder.throwOnConstruct = false;
+    await act(() => result.current.start());
+    expect(result.current.state.status).toBe('recording');
   });
 
-  it('returns to idle on reset after a take', async () => {
-    const { stream } = fakeStream();
-    installMedia(async () => stream);
+  it('reports a recorder error as failed, not as a finished take', async () => {
+    const { tracks } = installMedia();
+    const { result } = renderHook(() => useRecorder());
+
+    await act(() => result.current.start());
+    act(() => FakeMediaRecorder.instances[0]?.fail());
+    await flush();
+
+    expect(result.current.state).toEqual({ status: 'error', reason: 'failed' });
+    expect(tracks[0]?.stop).toHaveBeenCalled();
+    expect(toScorableWav).not.toHaveBeenCalled();
+  });
+
+  it('reports a take with no audio as too short, without converting it', async () => {
+    installMedia();
+    const { result } = renderHook(() => useRecorder());
+
+    await act(() => result.current.start());
+    const recorder = FakeMediaRecorder.instances[0];
+    if (recorder) recorder.emitsData = false;
+    act(() => result.current.stop());
+    await flush();
+
+    expect(result.current.state).toEqual({ status: 'error', reason: 'too-short' });
+    expect(toScorableWav).not.toHaveBeenCalled();
+  });
+
+  it('reports a take that decodes too short as too short', async () => {
+    installMedia();
     const { result } = renderHook(() => useRecorder());
 
     await act(() => result.current.start());
     act(() => result.current.stop());
-    await waitFor(() => expect(result.current.state.status).toBe('done'));
+    await flush();
+    await act(async () => conversion?.reject(new RecordingTooShortError(0.1)));
 
-    act(() => result.current.reset());
-    expect(result.current.state.status).toBe('idle');
-  });
-
-  it('does not let an earlier deadline cut a later take short', async () => {
-    vi.useFakeTimers();
-    const { stream } = fakeStream();
-    installMedia(async () => stream);
-    const { result } = renderHook(() => useRecorder());
-
-    await act(() => result.current.start());
-    act(() => vi.advanceTimersByTime(5_000));
-    act(() => result.current.stop());
-    await act(() => result.current.start());
-    // Past the first take's deadline, short of the second's.
-    act(() => vi.advanceTimersByTime(MAX_RECORD_SECONDS * 1000 - 5_000));
-
-    expect(FakeMediaRecorder.instances).toHaveLength(2);
-    expect(FakeMediaRecorder.instances[1]?.state).toBe('recording');
-  });
-
-  it('releases a microphone granted after the screen has unmounted', async () => {
-    const { stream, track } = fakeStream();
-    let grant: (stream: MediaStream) => void = () => undefined;
-    installMedia(() => new Promise((resolve) => (grant = resolve)));
-    const { result, unmount } = renderHook(() => useRecorder());
-
-    let starting: Promise<void> = Promise.resolve();
-    act(() => {
-      starting = result.current.start();
-    });
-    unmount();
-    grant(stream);
-    await starting;
-
-    expect(track.stop).toHaveBeenCalled();
-    expect(FakeMediaRecorder.instances).toHaveLength(0);
+    expect(result.current.state).toEqual({ status: 'error', reason: 'too-short' });
   });
 });
