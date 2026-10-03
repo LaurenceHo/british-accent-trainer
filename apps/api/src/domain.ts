@@ -1,5 +1,9 @@
 /**
- * Domain types shared across routes, scoring, and the seed script.
+ * Domain types shared across routes, scoring, the seed script — and the web app.
+ *
+ * **This file is bundled into the browser** (`apps/web` imports it through the
+ * `@api/domain` alias), so it must contain only types and plain constants and must not
+ * import anything. Lint enforces that.
  *
  * Feature names follow J.C. Wells' standard lexical sets where one applies. Wells defined
  * those sets using RP and General American as the two reference accents, which is exactly
