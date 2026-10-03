@@ -22,5 +22,7 @@
     "baseUrl": ".",
     "paths": { "@/*": ["./src/*"], "@api/domain": ["../api/src/domain.ts"] }
   },
-  "include": ["src", "test"]
+  "include": ["src", "test"],
+  // The service worker runs in a worker, not a page: it is typechecked by tsconfig.sw.json.
+  "exclude": ["src/sw/sw.ts"]
 }

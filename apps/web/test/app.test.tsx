@@ -1,4 +1,5 @@
 import { act, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '@/App';
 import { fetchStub, json, renderWithClient } from './render';
@@ -16,6 +17,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   window.location.hash = '';
 });
 
@@ -76,5 +78,40 @@ describe('App', () => {
     await navigate('#/nowhere');
 
     expect(screen.getByRole('link', { name: 'Practise' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('offers a skip link that moves focus to the content without changing the view', async () => {
+    // A plain "#main" anchor would rewrite the hash, which is the router.
+    window.location.hash = '#/progress';
+    renderWithClient(<App />);
+
+    const skip = screen.getByRole('link', { name: 'Skip to content' });
+    await userEvent.click(skip);
+
+    expect(screen.getByRole('main')).toHaveFocus();
+    expect(window.location.hash).toBe('#/progress');
+  });
+
+  it('puts the skip link first in the tab order', async () => {
+    renderWithClient(<App />);
+
+    await userEvent.tab();
+
+    expect(screen.getByRole('link', { name: 'Skip to content' })).toHaveFocus();
+  });
+
+  it('says when the app is offline, and stops saying so on reconnect', async () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    renderWithClient(<App />);
+    expect(screen.queryByText(/You are offline/)).not.toBeInTheDocument();
+
+    onLine.mockReturnValue(false);
+    await act(async () => window.dispatchEvent(new Event('offline')));
+    // Inside an always-present status region, so screen readers announce it.
+    expect(screen.getByRole('status')).toHaveTextContent(/You are offline/);
+
+    onLine.mockReturnValue(true);
+    await act(async () => window.dispatchEvent(new Event('online')));
+    expect(screen.queryByText(/You are offline/)).not.toBeInTheDocument();
   });
 });

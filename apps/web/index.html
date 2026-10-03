@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Practise Received Pronunciation by shadowing a native model." />
     <title>British Accent Trainer</title>
+    <!-- use-credentials: behind Cloudflare Access the manifest needs the session cookie, and
+         browsers fetch manifests without cookies unless told otherwise, even same-origin. -->
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
+    <meta name="theme-color" content="#1f2937" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <!-- iOS ignores the manifest's icons and needs its own, opaque, 180×180. -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="Accent Trainer" />
   </head>
   <body>
     <div id="root"></div>

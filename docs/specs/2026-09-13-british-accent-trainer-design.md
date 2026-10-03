@@ -293,6 +293,45 @@ A second view, reached from the header, showing practice over the last 90 days. 
 
 ---
 
+## Installable and offline (Task 12)
+
+Decisions:
+
+- **No PWA plugin.** The service worker is ours, built by Vite as a second entry at a
+  fixed `/sw.js`. It needs no list of build files, so `vite-plugin-pwa` (and its Workbox
+  dependency tree) buys nothing here.
+- **What it caches, by request:**
+  - **Page navigations**: network first, falling back to the cached shell, so a deploy is
+    picked up on the next online visit and the app still opens offline.
+  - **`/assets/*`**: cache first. Vite fingerprints these names, so a cached copy can
+    never be stale; new builds bring new names.
+  - **`/api/*`**: never cached. Drills, scores and recordings are live data, and a cached
+    clarity score or progress chart would quietly lie.
+  - **Each build gets its own cache.** A build id is baked into `sw.js`, so every deploy
+    changes its bytes and browsers install the new worker, which deletes the previous
+    build's cache on activation. Install pre-caches the shell, the scripts and styles it
+    references and the fonts those styles name, so the app opens offline after one visit.
+    A redirected shell (a login page) fails the install rather than being cached as the app.
+  - **Cache writes never delay or fail a response.** They run in the background and a
+    failure (a full quota, small on iOS) is ignored; only complete 200 responses are kept.
+    Navigations share one cache key, so query strings do not each store a copy.
+- **Registered in production builds only**, so development never serves a stale module.
+- **Behind Cloudflare Access**, the manifest link carries `crossorigin="use-credentials"`:
+  browsers fetch manifests without cookies otherwise, Access would answer with a login
+  redirect, and the app would never offer installation. Whether browsers send cookies for
+  the icons is not guaranteed, so the Access application should also have a bypass policy
+  for `/manifest.webmanifest` and `/icons/*`, which hold nothing private.
+- **The build fails if `sw.js` would import a shared chunk**: it runs as a classic worker,
+  which cannot.
+- **Offline behaviour**: a banner says the app is offline. Recording still works, but
+  "Check clarity" is disabled with the reason, rather than failing with a network error.
+- **Icons are generated**, not drawn by hand: `apps/web/scripts/make-icons.ts` rasterises
+  the mark and writes the PNGs (any-purpose 192/512, maskable 512, Apple touch 180) with
+  Node's built-in `zlib`. Rerun it if the mark changes.
+- **A skip link** to the main content, first in the tab order, visible when focused.
+
+---
+
 ## Tech Stack
 
 | Concern | Choice | Rationale |

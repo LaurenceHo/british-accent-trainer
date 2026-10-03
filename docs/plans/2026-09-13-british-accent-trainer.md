@@ -125,7 +125,7 @@ Task 8. Do not begin Phase 1 until resolved with a human.
 ### Phase 3: Progress and Polish
 
 - [x] Task 11: Progress history and trends ✅ (design: [spec](../specs/2026-09-13-british-accent-trainer-design.md#progress-screen-task-11))
-- [ ] Task 12: PWA, accessibility, and cross-browser hardening
+- [ ] Task 12: PWA, accessibility, and cross-browser hardening — manifest, service worker, offline handling and skip link done ([spec](../specs/2026-09-13-british-accent-trainer-design.md#installable-and-offline-task-12)); install on a real phone and Chrome/Firefox/Safari microphone checks are manual and pending
 
 **Checkpoint: Complete** — all [success criteria](../specs/2026-09-13-british-accent-trainer-design.md#success-criteria) met.
 
